@@ -88,6 +88,8 @@ Use tolerance comparisons for TimingPoint times, for example `abs(a - b) < 1e-6`
 - `type & 128 != 0`: hold -> USC `slide`.
 - Hold `endTime` is stored in `objectParams` as `endTime:hitSample`.
 - Converted hold/slide tail judgment type is controlled by product config and currently only supports `release` or `trace`.
+- Optional Tinged Columns config may convert specific lanes to USC `critical: true`: 4K lanes 1/4, 5K lanes 2/4, 6K lanes 2/5. These lane numbers are 1-based from left to right.
+- Tinged Columns applies to both tap `single` objects and hold `slide` objects, and must stay disabled by default.
 
 ### Offset
 
