@@ -394,7 +394,6 @@ def build_scp(
     engine_path: str,
     output_path: str,
     single_version: Optional[str] = None,
-    include_all: bool = True,
     tail_mode: str = "release",
     background_mode: str = "default",
     progress_callback: Optional[ProgressCallback] = None,
@@ -404,7 +403,6 @@ def build_scp(
 
     Returns 0 on success, 1 on error.
     """
-    del include_all  # Kept for backward-compatible callers.
     return build_merged_scp(
         [osz_path],
         engine_path,

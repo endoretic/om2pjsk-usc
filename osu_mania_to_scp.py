@@ -153,8 +153,6 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="Use NextRUSH+ default gameplay background or generated original osu backgrounds")
     parser.add_argument("--tinged-columns", action="store_true",
                         help="Convert notes on Tinged Columns to critical notes (4K: 1/4, 5K: 2/4, 6K: 2/5)")
-    parser.add_argument("--auto-critical-lanes", dest="tinged_columns", action="store_true",
-                        help=argparse.SUPPRESS)
 
     args = parser.parse_args(argv)
 
