@@ -190,6 +190,7 @@ class USCBuilder:
                     "beat": end_beat,
                     "lane": lane,
                     "size": size,
+                    "critical": critical,
                     "timeScaleGroup": 0,
                 }
                 tail_connection.update(_tail_connection_fields(self.tail_mode))
@@ -202,6 +203,7 @@ class USCBuilder:
                             "beat": beat,
                             "lane": lane,
                             "size": size,
+                            "critical": critical,
                             "ease": "linear",
                             "judgeType": "normal",
                             "timeScaleGroup": 0,

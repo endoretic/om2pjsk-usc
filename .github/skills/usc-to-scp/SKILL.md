@@ -44,6 +44,14 @@ metadata -> sonolus/levels/list + sonolus/levels/<name> + info/package docs
 all entries -> .scp ZIP
 ```
 
+## NextRUSH+ Slide/Hold Conversion
+
+For USC `slide` objects, follow the upstream NextRUSH+ `uscToLevelData` entity graph:
+- Use each connection's own `critical` and `judgeType` to choose Head/Tail archetypes.
+- Release tails are `NormalTailReleaseNote` / `CriticalTailReleaseNote`; trace tails are `NormalTailTraceNote` / `CriticalTailTraceNote`.
+- Generate `Connector` entities between slide joints, set `activeHead` / `activeTail`, and generate transient hidden ticks between long hold endpoints.
+- Do not collapse holds to only a head note plus tail note; that loses the active connector structure the engine expects.
+
 ## Resource Rules
 
 The SRL `hash` is the SHA-1 of the exact bytes stored at `sonolus/repository/<hash>`.
