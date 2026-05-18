@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import QEasingCurve, QObject, QPropertyAnimation, QRunnable, Qt, QThreadPool, Signal, Slot
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -40,6 +40,7 @@ from src.scp_writer import build_merged_scp, build_scp
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+APP_USER_MODEL_ID = "om2usc.converter.gui"
 
 
 @dataclass
@@ -770,6 +771,25 @@ def default_engine_path() -> Optional[Path]:
     return None
 
 
+def app_icon_path() -> Optional[Path]:
+    roots: List[Path] = []
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if bundle_root:
+        roots.append(Path(bundle_root))
+    roots.extend([
+        Path.cwd(),
+        Path(sys.argv[0]).resolve().parent,
+    ])
+
+    relative_paths = [Path("icon") / "om2usc.ico"]
+    for root in roots:
+        for relative_path in relative_paths:
+            candidate = root / relative_path
+            if candidate.exists():
+                return candidate.resolve()
+    return None
+
+
 def show_message(
     parent: QWidget,
     icon: QMessageBox.Icon,
@@ -842,11 +862,31 @@ def enable_windows_acrylic(window: QMainWindow) -> None:
         return
 
 
+def set_windows_app_user_model_id() -> None:
+    """Give Windows taskbar/app switcher a stable app identity and icon group."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
+    except Exception:
+        return
+
+
 def main() -> int:
+    set_windows_app_user_model_id()
     app = QApplication(sys.argv)
     app.setApplicationName("om2usc")
     app.setOrganizationName("om2usc")
+    icon_path = app_icon_path()
+    if icon_path is not None:
+        icon = QIcon(str(icon_path))
+        if not icon.isNull():
+            app.setWindowIcon(icon)
     window = Om2UscWindow()
+    if icon_path is not None:
+        window.setWindowIcon(QIcon(str(icon_path)))
     window.show()
     return app.exec()
 
