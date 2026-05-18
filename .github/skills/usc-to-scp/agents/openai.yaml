@@ -1,0 +1,4 @@
+interface:
+  display_name: "USC to SCP"
+  short_description: "Package USC charts into Sonolus SCP files"
+  default_prompt: "Use $usc-to-scp to package USC JSON and media resources into an importable Sonolus SCP."

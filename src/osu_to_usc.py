@@ -9,13 +9,25 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from math import floor
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
-from .osu_parser import HitObject, OsuChart, TimingPoint
+from .osu_parser import OsuChart, TimingPoint
 
 # Stage width for NextRUSH+ lane mapping
 STAGE_WIDTH = 12.0
+
+TAIL_MODES = {
+    "release",
+    "trace",
+}
+
+
+def mania_column_to_usc_lane_size(key_count: int, col: int) -> tuple[float, float]:
+    """Map a 0-based mania column to USC lane center and note half-size."""
+    column_width = STAGE_WIDTH / key_count
+    lane = -STAGE_WIDTH / 2 + (col + 0.5) * column_width
+    size = column_width / 2
+    return lane, size
 
 
 # ---------------------------------------------------------------------------
@@ -82,11 +94,23 @@ def time_ms_to_beat(time_ms: float, segments: List[BpmSegment]) -> float:
 # USC builder
 # ---------------------------------------------------------------------------
 
+def _tail_connection_fields(tail_mode: str) -> Dict[str, str]:
+    """Return USC fields for a hold tail style."""
+    if tail_mode not in TAIL_MODES:
+        raise ValueError(f"Unsupported tail mode: {tail_mode}")
+    if tail_mode == "trace":
+        return {"judgeType": "trace"}
+    return {"judgeType": "normal"}
+
+
 class USCBuilder:
     """Builds a USC JSON structure from parsed chart data."""
 
-    def __init__(self, chart: OsuChart):
+    def __init__(self, chart: OsuChart, tail_mode: str = "release"):
+        if tail_mode not in TAIL_MODES:
+            raise ValueError(f"Unsupported tail mode: {tail_mode}")
         self.chart = chart
+        self.tail_mode = tail_mode
         self.bpm_segments = build_bpm_segments(chart.red_timing_points)
         self._objects: List[Dict[str, Any]] = []
 
@@ -123,12 +147,10 @@ class USCBuilder:
     def add_notes(self) -> None:
         """Convert HitObjects to USC single/slide objects."""
         key_count = self.chart.key_count
-        column_width = STAGE_WIDTH / key_count
 
         for ho in self.chart.hit_objects:
             col = ho.lane(key_count)
-            lane = -STAGE_WIDTH / 2 + (col + 0.5) * column_width
-            size = column_width
+            lane, size = mania_column_to_usc_lane_size(key_count, col)
             beat = time_ms_to_beat(ho.time, self.bpm_segments)
 
             if not ho.is_hold:
@@ -145,6 +167,14 @@ class USCBuilder:
             else:
                 # Hold → slide
                 end_beat = time_ms_to_beat(ho.end_time, self.bpm_segments)
+                tail_connection = {
+                    "type": "end",
+                    "beat": end_beat,
+                    "lane": lane,
+                    "size": size,
+                    "timeScaleGroup": 0,
+                }
+                tail_connection.update(_tail_connection_fields(self.tail_mode))
                 self._objects.append({
                     "type": "slide",
                     "critical": False,
@@ -158,14 +188,7 @@ class USCBuilder:
                             "judgeType": "normal",
                             "timeScaleGroup": 0,
                         },
-                        {
-                            "type": "end",
-                            "beat": end_beat,
-                            "lane": lane,
-                            "size": size,
-                            "judgeType": "normal",
-                            "timeScaleGroup": 0,
-                        },
+                        tail_connection,
                     ],
                 })
 
@@ -194,13 +217,13 @@ class USCBuilder:
 # Convenience function
 # ---------------------------------------------------------------------------
 
-def osu_to_usc(chart: OsuChart) -> Dict[str, Any]:
+def osu_to_usc(chart: OsuChart, tail_mode: str = "release") -> Dict[str, Any]:
     """Convert a parsed osu!mania chart to USC JSON."""
-    builder = USCBuilder(chart)
+    builder = USCBuilder(chart, tail_mode=tail_mode)
     return builder.build()
 
 
-def osu_to_usc_json(chart: OsuChart, indent: int = 2) -> str:
+def osu_to_usc_json(chart: OsuChart, indent: int = 2, tail_mode: str = "release") -> str:
     """Convert to USC JSON string."""
-    usc = osu_to_usc(chart)
+    usc = osu_to_usc(chart, tail_mode=tail_mode)
     return json.dumps(usc, ensure_ascii=False, indent=indent)
