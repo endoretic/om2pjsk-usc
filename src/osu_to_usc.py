@@ -21,6 +21,12 @@ TAIL_MODES = {
     "trace",
 }
 
+TINGED_COLUMNS_BY_KEY = {
+    4: {0, 3},
+    5: {1, 3},
+    6: {1, 4},
+}
+
 
 def mania_column_to_usc_lane_size(key_count: int, col: int) -> tuple[float, float]:
     """Map a 0-based mania column to USC lane center and note half-size."""
@@ -28,6 +34,11 @@ def mania_column_to_usc_lane_size(key_count: int, col: int) -> tuple[float, floa
     lane = -STAGE_WIDTH / 2 + (col + 0.5) * column_width
     size = column_width / 2
     return lane, size
+
+
+def is_tinged_column(key_count: int, col: int) -> bool:
+    """Return whether a 0-based mania column is part of Tinged Columns."""
+    return col in TINGED_COLUMNS_BY_KEY.get(key_count, set())
 
 
 # ---------------------------------------------------------------------------
@@ -106,11 +117,17 @@ def _tail_connection_fields(tail_mode: str) -> Dict[str, str]:
 class USCBuilder:
     """Builds a USC JSON structure from parsed chart data."""
 
-    def __init__(self, chart: OsuChart, tail_mode: str = "release"):
+    def __init__(
+        self,
+        chart: OsuChart,
+        tail_mode: str = "release",
+        tinged_columns: bool = False,
+    ):
         if tail_mode not in TAIL_MODES:
             raise ValueError(f"Unsupported tail mode: {tail_mode}")
         self.chart = chart
         self.tail_mode = tail_mode
+        self.tinged_columns = tinged_columns
         self.bpm_segments = build_bpm_segments(chart.red_timing_points)
         self._objects: List[Dict[str, Any]] = []
 
@@ -152,6 +169,7 @@ class USCBuilder:
             col = ho.lane(key_count)
             lane, size = mania_column_to_usc_lane_size(key_count, col)
             beat = time_ms_to_beat(ho.time, self.bpm_segments)
+            critical = self.tinged_columns and is_tinged_column(key_count, col)
 
             if not ho.is_hold:
                 # Tap → single
@@ -160,7 +178,7 @@ class USCBuilder:
                     "beat": beat,
                     "lane": lane,
                     "size": size,
-                    "critical": False,
+                    "critical": critical,
                     "trace": False,
                     "timeScaleGroup": 0,
                 })
@@ -177,7 +195,7 @@ class USCBuilder:
                 tail_connection.update(_tail_connection_fields(self.tail_mode))
                 self._objects.append({
                     "type": "slide",
-                    "critical": False,
+                    "critical": critical,
                     "connections": [
                         {
                             "type": "start",
@@ -217,13 +235,30 @@ class USCBuilder:
 # Convenience function
 # ---------------------------------------------------------------------------
 
-def osu_to_usc(chart: OsuChart, tail_mode: str = "release") -> Dict[str, Any]:
+def osu_to_usc(
+    chart: OsuChart,
+    tail_mode: str = "release",
+    tinged_columns: bool = False,
+) -> Dict[str, Any]:
     """Convert a parsed osu!mania chart to USC JSON."""
-    builder = USCBuilder(chart, tail_mode=tail_mode)
+    builder = USCBuilder(
+        chart,
+        tail_mode=tail_mode,
+        tinged_columns=tinged_columns,
+    )
     return builder.build()
 
 
-def osu_to_usc_json(chart: OsuChart, indent: int = 2, tail_mode: str = "release") -> str:
+def osu_to_usc_json(
+    chart: OsuChart,
+    indent: int = 2,
+    tail_mode: str = "release",
+    tinged_columns: bool = False,
+) -> str:
     """Convert to USC JSON string."""
-    usc = osu_to_usc(chart, tail_mode=tail_mode)
+    usc = osu_to_usc(
+        chart,
+        tail_mode=tail_mode,
+        tinged_columns=tinged_columns,
+    )
     return json.dumps(usc, ensure_ascii=False, indent=indent)

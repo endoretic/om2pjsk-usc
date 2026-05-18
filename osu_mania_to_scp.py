@@ -96,6 +96,7 @@ def cmd_dump_usc(
     out_dir: str,
     single_version: Optional[str] = None,
     tail_mode: str = "release",
+    tinged_columns: bool = False,
 ) -> int:
     """Dump USC JSON for one or all charts."""
     charts = parse_all_charts(entries)
@@ -118,7 +119,11 @@ def cmd_dump_usc(
             return 1
 
     for chart in targets:
-        usc_json = osu_to_usc_json(chart, tail_mode=tail_mode)
+        usc_json = osu_to_usc_json(
+            chart,
+            tail_mode=tail_mode,
+            tinged_columns=tinged_columns,
+        )
         safe_name = chart.version.replace("/", "_").replace("\\", "_")
         filename = out_path / f"{safe_name}.usc.json"
         filename.write_text(usc_json, encoding="utf-8")
@@ -146,6 +151,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="Hold tail style for converted slide endings")
     parser.add_argument("--background-mode", choices=("default", "original"), default="default",
                         help="Use NextRUSH+ default gameplay background or generated original osu backgrounds")
+    parser.add_argument("--tinged-columns", action="store_true",
+                        help="Convert notes on Tinged Columns to critical notes (4K: 1/4, 5K: 2/4, 6K: 2/5)")
+    parser.add_argument("--auto-critical-lanes", dest="tinged_columns", action="store_true",
+                        help=argparse.SUPPRESS)
 
     args = parser.parse_args(argv)
 
@@ -166,7 +175,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("--dump-usc currently accepts exactly one input .osz", file=sys.stderr)
             return 1
         entries = read_osz(args.input[0])
-        return cmd_dump_usc(entries, args.dump_usc, args.single_difficulty, args.tail_mode)
+        return cmd_dump_usc(
+            entries,
+            args.dump_usc,
+            args.single_difficulty,
+            args.tail_mode,
+            args.tinged_columns,
+        )
 
     if args.out or args.out_dir:
         if not args.engine:
@@ -185,6 +200,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 single_version=args.single_difficulty,
                 tail_mode=args.tail_mode,
                 background_mode=args.background_mode,
+                tinged_columns=args.tinged_columns,
             )
 
         if len(args.input) == 1:
@@ -198,6 +214,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 args.single_difficulty,
                 tail_mode=args.tail_mode,
                 background_mode=args.background_mode,
+                tinged_columns=args.tinged_columns,
             )
 
         if not args.out_dir:
@@ -215,6 +232,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 args.single_difficulty,
                 tail_mode=args.tail_mode,
                 background_mode=args.background_mode,
+                tinged_columns=args.tinged_columns,
             )
         return status
 

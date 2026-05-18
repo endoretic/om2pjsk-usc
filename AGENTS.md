@@ -48,6 +48,7 @@ UI goals:
 Functional goals:
 - batch import multiple `.osz` packages
 - configurable hold/slide tail judgment type: `release` or `trace` only
+- optional Tinged Columns conversion: 4K lanes 1/4, 5K lanes 2/4, 6K lanes 2/5 become critical notes
 - export mode: one `.scp` per `.osz`
 - export mode: merge multiple `.osz` packages into one `.scp`
 - selectable output path
@@ -66,6 +67,7 @@ Functional goals:
 - Initial PySide6 Windows GUI implemented
 - Batch export modes implemented: one `.scp` per `.osz`, or multiple `.osz` merged into one `.scp`
 - Configurable hold tail style (`release` / `trace`) and gameplay background mode implemented
+- Optional Tinged Columns conversion implemented for GUI/CLI (`--tinged-columns`)
 
 ### ❌ Pending
 - **Phase 3**: Validate `usc.offset` sign by importing a test .scp into real Sonolus
@@ -98,6 +100,14 @@ size = column_width / 2
 ```
 
 Use `testdata/key4.usc`, `testdata/key5.usc`, and `testdata/key6.usc` as minimal lane/size references.
+
+### Tinged Columns
+When enabled, convert objects on these 1-based mania lanes to USC `critical: true`:
+- 4K: lanes 1 and 4 (`col` 0 and 3)
+- 5K: lanes 2 and 4 (`col` 1 and 3)
+- 6K: lanes 2 and 5 (`col` 1 and 4)
+
+This applies to both tap `single` objects and hold `slide` objects. Keep it disabled by default.
 
 ### Dependency Policy
 The stdlib-only restriction is removed. Prefer the best implementation result over avoiding dependencies.
@@ -155,7 +165,7 @@ python osu_mania_to_scp.py testdata/4K.osz --engine engine.scp --out output.scp 
 
 # Merge multiple .osz files
 python osu_mania_to_scp.py testdata/4K.osz testdata/5K.osz --engine engine.scp \
-    --out merged.scp --merge --tail-mode trace --background-mode original
+    --out merged.scp --merge --tail-mode trace --background-mode original --tinged-columns
 ```
 
 ### GUI Usage

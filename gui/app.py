@@ -13,6 +13,7 @@ from PySide6.QtCore import QEasingCurve, QObject, QPropertyAnimation, QRunnable,
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -64,6 +65,7 @@ class ConversionWorker(QRunnable):
         export_mode: str,
         tail_mode: str,
         background_mode: str,
+        tinged_columns: bool,
     ) -> None:
         super().__init__()
         self.entries = entries
@@ -72,6 +74,7 @@ class ConversionWorker(QRunnable):
         self.export_mode = export_mode
         self.tail_mode = tail_mode
         self.background_mode = background_mode
+        self.tinged_columns = tinged_columns
         self.signals = WorkerSignals()
 
     @Slot()
@@ -85,6 +88,7 @@ class ConversionWorker(QRunnable):
                     self.output_path,
                     tail_mode=self.tail_mode,
                     background_mode=self.background_mode,
+                    tinged_columns=self.tinged_columns,
                     progress_callback=self.signals.progress.emit,
                 )
                 if status != 0:
@@ -113,6 +117,7 @@ class ConversionWorker(QRunnable):
                         str(out_file),
                         tail_mode=self.tail_mode,
                         background_mode=self.background_mode,
+                        tinged_columns=self.tinged_columns,
                         progress_callback=report,
                     )
                     if status != 0:
@@ -346,6 +351,13 @@ class Om2UscWindow(QMainWindow):
         form.addWidget(QLabel("Gameplay BG"), 4, 0)
         form.addWidget(self.background_combo, 4, 1, 1, 2)
 
+        self.tinged_columns_checkbox = QCheckBox("Tinged Columns")
+        self.tinged_columns_checkbox.setToolTip(
+            "Convert notes on Tinged Columns to critical notes. 4K: lanes 1/4; 5K: lanes 2/4; 6K: lanes 2/5"
+        )
+        form.addWidget(QLabel("Note color"), 5, 0)
+        form.addWidget(self.tinged_columns_checkbox, 5, 1, 1, 2)
+
         self.convert_button = QPushButton("Convert")
         self.convert_button.setObjectName("PrimaryButton")
         self.progress = QProgressBar()
@@ -409,6 +421,22 @@ class Om2UscWindow(QMainWindow):
                 border-radius: 6px;
                 padding: 8px 10px;
                 selection-background-color: rgba(255, 138, 184, 172);
+            }
+            QCheckBox {
+                background: transparent;
+                spacing: 8px;
+                padding: 7px 0;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 1px solid rgba(255, 255, 255, 80);
+                border-radius: 4px;
+                background: rgba(7, 10, 18, 118);
+            }
+            QCheckBox::indicator:checked {
+                background: rgba(255, 196, 66, 218);
+                border-color: rgba(255, 235, 164, 230);
             }
             #PackageList, #StatusLog {
                 background: transparent;
@@ -626,6 +654,7 @@ class Om2UscWindow(QMainWindow):
             export_mode=export_mode,
             tail_mode=self.tail_combo.currentData(),
             background_mode=self.background_combo.currentData(),
+            tinged_columns=self.tinged_columns_checkbox.isChecked(),
         )
         worker.signals.progress.connect(self.on_progress)
         worker.signals.message.connect(self.log_message)
@@ -642,6 +671,7 @@ class Om2UscWindow(QMainWindow):
             self.export_combo,
             self.tail_combo,
             self.background_combo,
+            self.tinged_columns_checkbox,
             self.file_list,
         ):
             widget.setEnabled(enabled)
