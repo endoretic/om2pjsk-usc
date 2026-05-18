@@ -2,7 +2,7 @@
 
 日期：2026-05-18
 
-本文用于启动一个新的 Python-only 项目：读取 osu!mania `.osz` / `.osu` 谱面，把谱面转换为 USC，再使用 NextRUSH+ 的 LevelData 规则生成可导入 Sonolus 的 `.scp` 包。当前实现只保留 Python converter 和测试资源，不包含旧 Web 端 / Repacker 源码。
+本文用于维护一个 Python-first 转换项目：读取 osu!mania `.osz` / `.osu` 谱面，把谱面转换为 USC，再使用 NextRUSH+ 的 LevelData 规则生成可导入 Sonolus 的 `.scp` 包。当前实现以 Python converter 为核心，下一阶段允许在其上增加 Windows GUI、图像处理和打包脚本；不再限制为标准库。
 
 ## 目标范围
 
@@ -21,6 +21,14 @@
   - `sonolus/repository/<hash>` 资源文件
   - NextRUSH+ 引擎、皮肤、效果、粒子等必要资源
   - 由 `.osu` 转换得到的 NextRUSH+ LevelData
+
+Windows GUI 目标：
+
+- 面向 Windows 桌面应用交付。
+- 视觉风格优先考虑 Win11 acrylic / 半透明 / 扁平化效果，并允许轻微日式动漫风。
+- 支持批量导入 `.osz`、转换进度条、随机背景预览、导出路径选择。
+- 支持 1 个 `.osz` 输出 1 个 `.scp`，也支持多个 `.osz` 合并输出为 1 个 `.scp`。
+- 支持配置 hold/slide 结尾判定类型，目前只保留 `release` / `trace`，以及游玩背景使用原背景资源或 NextRUSH+ 默认背景。
 
 推荐阶段目标：
 
@@ -266,19 +274,19 @@ osu!mania 是离散轨道，NextRUSH+ / Prosekai 风格 LevelData 使用横向 `
 stage_width = 12
 column_width = stage_width / key_count
 lane = -stage_width / 2 + (col + 0.5) * column_width
-size = column_width
+size = column_width / 2
 ```
 
 对于 4K：
 
 ```text
-col 0 -> lane -4.5, size 3
-col 1 -> lane -1.5, size 3
-col 2 -> lane  1.5, size 3
-col 3 -> lane  4.5, size 3
+col 0 -> lane -4.5, size 1.5
+col 1 -> lane -1.5, size 1.5
+col 2 -> lane  1.5, size 1.5
+col 3 -> lane  4.5, size 1.5
 ```
 
-这不是 osu 原生显示，而是映射到 NextRUSH+ 判定线坐标。需要通过实际导入确认视觉密度是否合适。若音符显得过宽，可把 `size` 改成 `column_width * 0.9`。
+这不是 osu 原生显示，而是映射到 NextRUSH+ 判定线坐标。`lane` 是音符中心，`size` 是 NextRUSH+ 使用的半宽，不是相邻 lane 中心点之间的完整间距。最小参考见 `testdata/key4.usc`、`testdata/key5.usc`、`testdata/key6.usc`。
 
 ## SV / TimeScale 映射
 
@@ -385,6 +393,13 @@ JSON 中引用资源通常类似：
 - `source`: `https://untitledcharts.com`
 - `version`: `13`
 
+更新 NextRUSH+ 引擎资源的方式：
+
+1. 从上游项目或其 release/build 输出获取新的兼容 NextRUSH+ Sonolus `.scp` 资源包。
+2. 用新包替换仓库根目录的 `engine.scp`。
+3. 确认新包仍包含 `sonolus/engines/NextRUSH_P`；如果引擎名变化，需要同步修改 `src/scp_writer.py` 中读取 engine item 的路径。
+4. 用 `python osu_mania_to_scp.py testdata/4K.osz --engine engine.scp --out .tmp/engine-check.scp` 做一次打包冒烟测试，再导入 Sonolus 验证显示和游玩行为。
+
 每个 level 需要：
 
 - `sonolus/levels/<level_name>`
@@ -394,38 +409,47 @@ JSON 中引用资源通常类似：
 - cover blob
 - 可选 preview blob
 
-LevelData 建议：
+Sonolus repository / SRL 规则：
 
-- JSON UTF-8 序列化。
-- gzip 压缩。
-- gzip 使用固定 `mtime=0`，保证 hash 稳定。
-- repository 文件名为压缩后内容的 SHA1。
+- SRL `hash` 是 `sonolus/repository/<hash>` 中实际存储字节的 SHA1。
+- LevelData、background data、background configuration 等 JSON resources：先 JSON UTF-8 序列化，再 gzip 压缩，再计算 SHA1 并写入 repository。
+- Engine ROM 等 binary schema resources：gzip 压缩后计算 SHA1 并写入 repository。
+- Image resources：原始图片字节写入 repository，不要 gzip。优先 PNG；来自 osu 的 JPG/WebP 背景应转成 PNG 后再作为 level cover / background image。
+- Audio resources：原始音频字节写入 repository，不要 gzip。优先 MP3。
+- Archive resources：原始 ZIP 字节写入 repository，不要 gzip。
+- `LevelItem.version` 为 `1`；`BackgroundItem.version` 为 `2`。
+- `sonolus/levels/<level_name>` 是 level details 文档，必须包含 `item`、`description`、`actions`、`hasCommunity`、`leaderboards`、`sections`。只写 `{"item": ...}` 会导致客户端加载 level details 失败。
 
 资源建议：
 
-- BGM：直接使用 `.osz` 内音频。
-- cover：先使用 `[Events]` 里的背景图作为 cover。
-- background：MVP 可以先使用 NextRUSH+ 默认 background。若要在游玩背景中显示 osu 背景图，需要进一步创建 Sonolus background item，而不仅是 level cover。
+- BGM：直接使用 `.osz` 内音频，按原始音频字节计算 SHA1。
+- cover：使用 `[Events]` 里的背景图派生小尺寸 1:1 PNG cover。
+- background：默认可使用 NextRUSH+ 默认 background。若要在游玩背景中显示 osu 背景图，需要创建 Sonolus `BackgroundItem`，并写入 PNG thumbnail/image、gzip 后的 background data/configuration，而不仅是 level cover。
 
-## 建议 Python 项目结构
+## 建议项目结构
 
-新项目只需要 Python 脚本，可以先做成小模块：
+当前转换核心可以继续保持小模块；Windows GUI 应作为上层应用复用这些模块，而不是把转换逻辑写进界面事件里：
 
 ```text
 osu-mania-usc-scp/
   README.md
   osu_mania_to_scp.py
+  requirements.txt 或 pyproject.toml
   src/
     osu_parser.py
     osu_to_usc.py
     nextrush_leveldata.py
     scp_writer.py
+  gui/
+    app.py
+    widgets.py
+    workers.py
   testdata/
     4K.osz
     engine.scp
 ```
 
-如果想更简单，也可以先只有一个脚本：
+CLI 仍应保留，便于回归测试和批处理：
 
 ```text
 osu_mania_to_scp.py
@@ -442,7 +466,7 @@ osu_mania_to_scp.py
 - `write_scp(output_path, levels, engine_pack)`
 - `validate_repository_refs(entries)`
 
-推荐标准库：
+转换核心可继续使用的标准库：
 
 - `argparse`
 - `dataclasses`
@@ -454,9 +478,12 @@ osu_mania_to_scp.py
 - `re`
 - `zipfile`
 
-可选依赖：
+允许使用第三方依赖，优先实现效果和工程可维护性：
 
-- `Pillow`：只在需要转换图片格式或生成缩略图时使用。MVP 不需要。
+- `PySide6`：优先候选 GUI 框架，适合做 Windows 桌面应用、半透明窗口、原生文件选择器、进度条和后台 worker。
+- `Pillow`：用于读取 `.osz` 内背景图、生成预览图、缩放/转换图片格式、控制背景可读性。
+- `PyInstaller` 或 `Nuitka`：用于打包 Windows 可执行文件。
+- 其他依赖可以按实际效果引入，但需要记录用途，并避免让转换核心和 GUI 强耦合。
 
 ## CLI 建议
 
@@ -479,6 +506,28 @@ python osu_mania_to_scp.py 4K.osz --engine engine.scp --out 4K.scp
 --offset-sign auto|positive|negative
 --no-sv
 ```
+
+## GUI 建议
+
+当前 GUI 入口：
+
+```bash
+python -m pip install -r requirements.txt
+python om2usc_gui.py
+```
+
+Windows 打包：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+```
+
+GUI 应继续复用 `src/` 下转换核心：
+
+- `gui/app.py` 只负责界面、文件选择、随机背景预览和后台 worker。
+- SCP 生成走 `src/scp_writer.py` 的 `build_scp()` / `build_merged_scp()`。
+- 长条尾类型通过 `tail_mode` 传入 `src/osu_to_usc.py`，当前只支持 `release` / `trace`。
+- 游玩背景通过 `background_mode` 传入 `src/scp_writer.py`。
 
 ## 分步 TODO
 
@@ -543,8 +592,8 @@ python osu_mania_to_scp.py 4K.osz --engine engine.scp --out 4K.scp
 1. 读取 `engine.scp`。
 2. 复制 NextRUSH+ engine、skin、effect、particle 相关 docs 和 repository blobs。
 3. 生成 LevelData gzip blob。
-4. 复制 BGM blob。
-5. 复制 cover image blob。
+4. 写入原始 BGM blob（不要 gzip）。
+5. 将 cover/background image 转成 PNG 后写入 image blob。
 6. 构造 `sonolus/levels/<level_name>`。
 7. 构造 `sonolus/levels/list`。
 8. 构造必要的 package / info docs。
@@ -587,7 +636,7 @@ python osu_mania_to_scp.py 4K.osz --engine engine.scp --out 4K.scp
 ## 已知风险
 
 - `usc.offset` 符号必须实测。
-- mania 轨道宽度到 NextRUSH+ `lane` / `size` 的映射没有唯一标准，需要视觉确认。
+- mania 轨道宽度到 NextRUSH+ `lane` / `size` 的映射以 `testdata/key4.usc`、`testdata/key5.usc`、`testdata/key6.usc` 为当前参考。
 - osu!mania SV 与 NextRUSH+ `timeScale` 不一定完全等价。
 - `.osu` hitsound / sampleSet 初期可能被忽略。
 - `.osz` 内可能有非 mania 谱面、占位谱面或缺失资源。

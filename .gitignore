@@ -3,3 +3,6 @@
 testdata/
 __pycache__/
 .tmp/
+build/
+dist/
+*.spec
