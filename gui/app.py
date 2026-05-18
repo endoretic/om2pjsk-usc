@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -29,6 +30,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QProgressBar,
     QGraphicsOpacityEffect,
+    QStyle,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -229,8 +231,8 @@ class Om2UscWindow(QMainWindow):
         self.thread_pool = QThreadPool.globalInstance()
 
         self.setWindowTitle("om2usc")
-        self.resize(1120, 720)
-        self.setMinimumSize(920, 620)
+        self.resize(1120, 820)
+        self.setMinimumSize(920, 720)
         self.setFont(QFont("Segoe UI Variable", 10))
 
         self.background = BackgroundWidget()
@@ -310,7 +312,7 @@ class Om2UscWindow(QMainWindow):
 
         form = QGridLayout()
         form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(10)
+        form.setVerticalSpacing(16)
         right_layout.addLayout(form)
 
         default_engine = default_engine_path()
@@ -367,16 +369,17 @@ class Om2UscWindow(QMainWindow):
         self.progress.setTextVisible(True)
         right_layout.addWidget(self.convert_button)
         right_layout.addWidget(self.progress)
+        right_layout.addSpacing(10)
 
         log_label = QLabel("Status")
         log_label.setObjectName("SectionTitle")
         self.log = QTextEdit()
         self.log.setObjectName("StatusLog")
         self.log.setReadOnly(True)
-        self.log.setMinimumHeight(180)
+        self.log.setFixedHeight(132)
         self.log.viewport().setAutoFillBackground(False)
         right_layout.addWidget(log_label)
-        right_layout.addWidget(self.log, 1)
+        right_layout.addWidget(self.log)
 
         self.add_button.clicked.connect(self.add_osz_files)
         self.clear_button.clicked.connect(self.clear_files)
@@ -420,8 +423,15 @@ class Om2UscWindow(QMainWindow):
                 background: rgba(7, 10, 18, 126);
                 border: 1px solid rgba(255, 255, 255, 42);
                 border-radius: 6px;
-                padding: 8px 10px;
                 selection-background-color: rgba(255, 138, 184, 172);
+            }
+            QLineEdit, QComboBox {
+                min-height: 40px;
+                padding: 0px 12px;
+                font-size: 14px;
+            }
+            QTextEdit, QListWidget {
+                padding: 8px 10px;
             }
             QCheckBox {
                 background: transparent;
@@ -487,7 +497,8 @@ class Om2UscWindow(QMainWindow):
                 background: rgba(255, 255, 255, 38);
                 border: 1px solid rgba(255, 255, 255, 58);
                 border-radius: 6px;
-                padding: 8px 14px;
+                min-height: 40px;
+                padding: 0px 16px;
                 font-weight: 600;
             }
             QPushButton:hover {
@@ -500,7 +511,8 @@ class Om2UscWindow(QMainWindow):
                 background: rgba(255, 118, 172, 184);
                 border-color: rgba(255, 196, 220, 210);
                 color: white;
-                padding: 10px 18px;
+                min-height: 44px;
+                padding: 0px 18px;
             }
             #PrimaryButton:hover {
                 background: rgba(255, 136, 188, 212);
@@ -790,40 +802,90 @@ def app_icon_path() -> Optional[Path]:
     return None
 
 
+def load_app_icon() -> QIcon:
+    icon_path = app_icon_path()
+    return QIcon(str(icon_path)) if icon_path is not None else QIcon()
+
+
 def show_message(
     parent: QWidget,
     icon: QMessageBox.Icon,
     title: str,
     text: str,
 ) -> None:
-    """Show a QMessageBox with explicit colors so app QSS cannot blank it."""
-    box = QMessageBox(parent)
-    box.setIcon(icon)
-    box.setWindowTitle(title)
-    box.setText(text or title)
-    box.setStandardButtons(QMessageBox.StandardButton.Ok)
-    box.setStyleSheet("""
-        QMessageBox {
+    """Show a compact message dialog with stable sizing and app icon."""
+    dialog = QDialog(parent)
+    dialog.setWindowTitle(title)
+    app_icon = QApplication.instance().windowIcon() if QApplication.instance() else QIcon()
+    if not app_icon.isNull():
+        dialog.setWindowIcon(app_icon)
+    dialog.setModal(True)
+    dialog.setFixedWidth(420)
+
+    root = QVBoxLayout(dialog)
+    root.setContentsMargins(20, 18, 20, 16)
+    root.setSpacing(16)
+
+    content = QHBoxLayout()
+    content.setSpacing(14)
+    icon_label = QLabel()
+    icon_label.setFixedSize(36, 36)
+    icon_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+    icon_label.setPixmap(_message_icon(icon).pixmap(32, 32))
+
+    text_label = QLabel(text or title)
+    text_label.setWordWrap(True)
+    text_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    text_label.setObjectName("MessageText")
+    content.addWidget(icon_label)
+    content.addWidget(text_label, 1)
+    root.addLayout(content)
+
+    button_row = QHBoxLayout()
+    button_row.addStretch(1)
+    ok_button = QPushButton("OK")
+    ok_button.setObjectName("DialogOkButton")
+    ok_button.setDefault(True)
+    ok_button.clicked.connect(dialog.accept)
+    button_row.addWidget(ok_button)
+    root.addLayout(button_row)
+
+    dialog.setStyleSheet("""
+        QDialog {
             background-color: rgb(246, 248, 252);
         }
-        QMessageBox QLabel {
+        QLabel {
             color: rgb(24, 29, 40);
             background: transparent;
-            min-width: 300px;
         }
-        QMessageBox QPushButton {
+        #MessageText {
+            font-size: 14px;
+            line-height: 20px;
+        }
+        QPushButton#DialogOkButton {
             color: rgb(24, 29, 40);
             background: rgb(255, 255, 255);
             border: 1px solid rgba(24, 29, 40, 48);
             border-radius: 6px;
-            padding: 7px 18px;
-            min-width: 72px;
+            padding: 7px 22px;
+            min-width: 78px;
         }
-        QMessageBox QPushButton:hover {
+        QPushButton#DialogOkButton:hover {
             background: rgb(236, 241, 250);
         }
     """)
-    box.exec()
+    dialog.exec()
+
+
+def _message_icon(icon: QMessageBox.Icon) -> QIcon:
+    style = QApplication.style()
+    if icon == QMessageBox.Icon.Warning:
+        return style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
+    if icon == QMessageBox.Icon.Critical:
+        return style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical)
+    if icon == QMessageBox.Icon.Question:
+        return style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxQuestion)
+    return style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation)
 
 
 def enable_windows_acrylic(window: QMainWindow) -> None:
@@ -879,14 +941,12 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("om2usc")
     app.setOrganizationName("om2usc")
-    icon_path = app_icon_path()
-    if icon_path is not None:
-        icon = QIcon(str(icon_path))
-        if not icon.isNull():
-            app.setWindowIcon(icon)
+    app_icon = load_app_icon()
+    if not app_icon.isNull():
+        app.setWindowIcon(app_icon)
     window = Om2UscWindow()
-    if icon_path is not None:
-        window.setWindowIcon(QIcon(str(icon_path)))
+    if not app_icon.isNull():
+        window.setWindowIcon(app_icon)
     window.show()
     return app.exec()
 
