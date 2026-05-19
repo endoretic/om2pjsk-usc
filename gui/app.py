@@ -250,7 +250,7 @@ class Om2UscWindow(QMainWindow):
         title_box = QVBoxLayout()
         app_title = QLabel("om2usc")
         app_title.setObjectName("AppTitle")
-        subtitle = QLabel("osu!mania to NextRUSH+ SCP")
+        subtitle = QLabel("Osu!Mania to ProSekai SCP")
         subtitle.setObjectName("Subtitle")
         title_box.addWidget(app_title)
         title_box.addWidget(subtitle)
