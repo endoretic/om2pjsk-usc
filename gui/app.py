@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import QEasingCurve, QObject, QPropertyAnimation, QRunnable, Qt, QThreadPool, Signal, Slot
+from PySide6.QtCore import QEvent, QEasingCurve, QObject, QPoint, QPropertyAnimation, QRunnable, Qt, QThreadPool, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QIcon, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -57,6 +57,28 @@ class WorkerSignals(QObject):
     progress = Signal(int, int, str)
     message = Signal(str)
     finished = Signal(bool, str)
+
+
+class InspectSignals(QObject):
+    loaded = Signal(object)
+    failed = Signal(str, str)
+    finished = Signal()
+
+
+class OszInspectWorker(QRunnable):
+    def __init__(self, paths: List[str]) -> None:
+        super().__init__()
+        self.paths = paths
+        self.signals = InspectSignals()
+
+    @Slot()
+    def run(self) -> None:
+        for path in self.paths:
+            try:
+                self.signals.loaded.emit(inspect_osz(path))
+            except Exception as exc:  # pragma: no cover - GUI safety boundary
+                self.signals.failed.emit(path, str(exc))
+        self.signals.finished.emit()
 
 
 class ConversionWorker(QRunnable):
@@ -228,10 +250,112 @@ class DropListWidget(QListWidget):
         )
 
 
+class HoverTipBubble(QWidget):
+    """Tooltip bubble with a manually painted translucent rounded background."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            None,
+            Qt.WindowType.ToolTip
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.NoDropShadowWindowHint,
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setFixedWidth(340)
+
+        self._label = QLabel(self)
+        self._label.setWordWrap(True)
+        self._label.setStyleSheet("""
+            QLabel {
+                color: rgba(248, 250, 255, 238);
+                font-size: 12px;
+                line-height: 18px;
+                background: transparent;
+            }
+        """)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.addWidget(self._label)
+
+    def set_text(self, text: str) -> None:
+        self._label.setText(text)
+        self.adjustSize()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect().adjusted(0, 0, -1, -1)
+        painter.setBrush(QColor(16, 20, 31, 230))
+        painter.setPen(QColor(255, 255, 255, 58))
+        painter.drawRoundedRect(rect, 8, 8)
+
+
+class HoverTip(QObject):
+    """Fast custom hover tip for compact option explanations."""
+
+    def __init__(self, parent: QWidget, delay_ms: int = 180) -> None:
+        super().__init__(parent)
+        self._texts: Dict[QWidget, str] = {}
+        self._target: Optional[QWidget] = None
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(delay_ms)
+        self._timer.timeout.connect(self._show_current)
+        self._bubble = HoverTipBubble()
+
+    def bind(self, widget: QWidget, text: str) -> None:
+        widget.setToolTip("")
+        widget.setMouseTracking(True)
+        widget.installEventFilter(self)
+        self._texts[widget] = text
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if isinstance(watched, QWidget) and watched in self._texts:
+            if event.type() == QEvent.Type.Enter:
+                self._target = watched
+                self._timer.start()
+            elif event.type() in (
+                QEvent.Type.Leave,
+                QEvent.Type.Hide,
+                QEvent.Type.MouseButtonPress,
+            ):
+                if self._target is watched:
+                    self._target = None
+                self._timer.stop()
+                self._bubble.hide()
+        return super().eventFilter(watched, event)
+
+    def _show_current(self) -> None:
+        target = self._target
+        if target is None or not target.isVisible() or not target.isEnabled():
+            return
+
+        self._bubble.set_text(self._texts[target])
+        size = self._bubble.size()
+        pos = target.mapToGlobal(QPoint(0, target.height() + 8))
+
+        screen = QApplication.screenAt(pos) or QApplication.primaryScreen()
+        if screen is not None:
+            geometry = screen.availableGeometry()
+            x = min(max(pos.x(), geometry.left() + 8), geometry.right() - size.width() - 8)
+            y = pos.y()
+            if y + size.height() + 8 > geometry.bottom():
+                y = target.mapToGlobal(QPoint(0, -size.height() - 8)).y()
+            pos = QPoint(x, y)
+
+        self._bubble.move(pos)
+        self._bubble.show()
+
+
 class Om2UscWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.entries: List[OszEntry] = []
+        self.loading_paths: set[str] = set()
+        self.pending_items: Dict[str, QListWidgetItem] = {}
         self.thread_pool = QThreadPool.globalInstance()
 
         self.setWindowTitle("om2usc")
@@ -360,12 +484,15 @@ class Om2UscWindow(QMainWindow):
         form.addWidget(self.background_combo, 4, 1, 1, 2)
 
         self.tinged_columns_checkbox = QCheckBox("Tinged Columns")
-        self.tinged_columns_checkbox.setToolTip(
-            "Convert notes on Tinged Columns to critical notes. 4K: lanes 1/4; 5K: lanes 2/4; 6K: lanes 2/5"
-        )
         self.sparse_hidden_ticks_checkbox = QCheckBox("Sparse hidden ticks (For LN)")
-        self.sparse_hidden_ticks_checkbox.setToolTip(
-            "Reduce generated slide body hidden ticks from every 0.5 beat to every 1.0 beat for dense long-note charts."
+        self.option_tip = HoverTip(self)
+        self.option_tip.bind(
+            self.tinged_columns_checkbox,
+            "Marks configured columns as gold critical notes. 4K uses lanes 1/4, 5K uses lanes 2/4, and 6K uses lanes 2/5.",
+        )
+        self.option_tip.bind(
+            self.sparse_hidden_ticks_checkbox,
+            "Reduces slide body hidden ticks from every 0.5 beat to every 1.0 beat. Use this for dense LN charts that over-penalize slide body misses.",
         )
         note_options = QHBoxLayout()
         note_options.setContentsMargins(0, 0, 0, 0)
@@ -373,7 +500,7 @@ class Om2UscWindow(QMainWindow):
         note_options.addWidget(self.tinged_columns_checkbox)
         note_options.addWidget(self.sparse_hidden_ticks_checkbox)
         note_options.addStretch(1)
-        form.addWidget(QLabel("Note color"), 5, 0)
+        form.addWidget(QLabel("Options"), 5, 0)
         form.addLayout(note_options, 5, 1, 1, 2)
 
         self.convert_button = QPushButton("Convert")
@@ -564,30 +691,75 @@ class Om2UscWindow(QMainWindow):
 
     @Slot(list)
     def add_osz_paths(self, paths: List[str]) -> None:
-        existing = {entry.path for entry in self.entries}
+        existing = {normalize_path(entry.path) for entry in self.entries}
+        queued: List[str] = []
+
         for path in paths:
-            if path in existing:
+            normalized = normalize_path(path)
+            if normalized in existing or normalized in self.loading_paths:
                 continue
-            try:
-                entry = inspect_osz(path)
-            except Exception as exc:
-                show_message(
-                    self,
-                    QMessageBox.Icon.Warning,
-                    "Could not load OSZ",
-                    f"{Path(path).name}\n{exc}",
-                )
-                continue
-            self.entries.append(entry)
-            item = QListWidgetItem(f"{Path(path).name}\n{entry.chart_count} valid chart(s) - {entry.title}")
+            self.loading_paths.add(normalized)
+            queued.append(normalized)
+            item = QListWidgetItem(f"{Path(normalized).name}\nLoading...")
+            item.setData(Qt.ItemDataRole.UserRole, normalized)
+            self.pending_items[normalized] = item
+            self.file_list.addItem(item)
+
+        if not queued:
+            return
+
+        self.log_message(f"Loading {len(queued)} package(s).")
+        worker = OszInspectWorker(queued)
+        worker.signals.loaded.connect(self.on_osz_loaded)
+        worker.signals.failed.connect(self.on_osz_load_failed)
+        worker.signals.finished.connect(self.on_osz_load_finished)
+        self.thread_pool.start(worker)
+
+    @Slot(object)
+    def on_osz_loaded(self, entry: OszEntry) -> None:
+        path = normalize_path(entry.path)
+        if path not in self.loading_paths:
+            return
+
+        self.loading_paths.discard(path)
+        entry.path = path
+        self.entries.append(entry)
+
+        item = self.pending_items.pop(path, None)
+        if item is None:
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, path)
             self.file_list.addItem(item)
-        backgrounds = [entry.background for entry in self.entries if entry.background]
-        if backgrounds:
-            pixmap = pixmap_from_bytes(random.choice(backgrounds))
-            if pixmap and not pixmap.isNull():
-                self.background.set_background(pixmap)
-        self.log_message(f"Loaded {len(self.entries)} package(s).")
+        item.setText(f"{Path(path).name}\n{entry.chart_count} valid chart(s) - {entry.title}")
+
+        if entry.background:
+            QTimer.singleShot(
+                0,
+                lambda data=entry.background, entry_path=path: self._set_background_from_bytes(entry_path, data),
+            )
+        self.log_message(f"Loaded {Path(path).name}.")
+
+    @Slot(str, str)
+    def on_osz_load_failed(self, path: str, message: str) -> None:
+        normalized = normalize_path(path)
+        self.loading_paths.discard(normalized)
+        item = self.pending_items.pop(normalized, None)
+        if item is not None:
+            row = self.file_list.row(item)
+            self.file_list.takeItem(row)
+        self.log_message(f"Could not load {Path(normalized).name}: {message}")
+
+    @Slot()
+    def on_osz_load_finished(self) -> None:
+        if not self.loading_paths:
+            self.log_message(f"Ready. {len(self.entries)} package(s) loaded.")
+
+    def _set_background_from_bytes(self, path: str, data: bytes) -> None:
+        if all(normalize_path(entry.path) != path for entry in self.entries):
+            return
+        pixmap = pixmap_from_bytes(data)
+        if pixmap and not pixmap.isNull():
+            self.background.set_background(pixmap)
 
     @Slot(bool)
     def set_drop_animation(self, active: bool) -> None:
@@ -602,6 +774,8 @@ class Om2UscWindow(QMainWindow):
 
     def clear_files(self) -> None:
         self.entries.clear()
+        self.loading_paths.clear()
+        self.pending_items.clear()
         self.file_list.clear()
         self.background.set_background(None)
         self.progress.setValue(0)
@@ -639,6 +813,14 @@ class Om2UscWindow(QMainWindow):
                 self.output_edit.setText(path)
 
     def start_conversion(self) -> None:
+        if self.loading_paths:
+            show_message(
+                self,
+                QMessageBox.Icon.Information,
+                "Packages loading",
+                "Wait for the selected .osz packages to finish loading.",
+            )
+            return
         if not self.entries:
             show_message(
                 self,
@@ -776,6 +958,10 @@ def pixmap_from_bytes(data: bytes) -> Optional[QPixmap]:
     except Exception:
         return None
     return None
+
+
+def normalize_path(path: str) -> str:
+    return str(Path(path).resolve())
 
 
 def _unique_output_path(path: Path, used: set[Path]) -> Path:
