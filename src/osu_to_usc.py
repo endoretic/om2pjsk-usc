@@ -17,6 +17,7 @@ from .osu_parser import OsuChart, TimingPoint
 STAGE_WIDTH = 12.0
 
 TAIL_MODES = {
+    "none",
     "release",
     "trace",
 }
@@ -109,6 +110,8 @@ def _tail_connection_fields(tail_mode: str) -> Dict[str, str]:
     """Return USC fields for a hold tail style."""
     if tail_mode not in TAIL_MODES:
         raise ValueError(f"Unsupported tail mode: {tail_mode}")
+    if tail_mode == "none":
+        return {"judgeType": "none"}
     if tail_mode == "trace":
         return {"judgeType": "trace"}
     return {"judgeType": "normal"}

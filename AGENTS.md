@@ -47,8 +47,9 @@ UI goals:
 
 Functional goals:
 - batch import multiple `.osz` packages
-- configurable hold/slide tail judgment type: `release` or `trace` only
+- configurable hold/slide tail judgment type: `release`, `trace`, or `none`
 - optional Tinged Columns conversion: 4K lanes 1/4, 5K lanes 2/4, 6K lanes 2/5 become critical notes
+- optional Sparse hidden ticks mode for dense LN charts
 - export mode: one `.scp` per `.osz`
 - export mode: merge multiple `.osz` packages into one `.scp`
 - selectable output path
@@ -66,8 +67,9 @@ Functional goals:
 - Hold→slide conversion verified (lane, time, duration)
 - Initial PySide6 Windows GUI implemented
 - Batch export modes implemented: one `.scp` per `.osz`, or multiple `.osz` merged into one `.scp`
-- Configurable hold tail style (`release` / `trace`) and gameplay background mode implemented
+- Configurable hold tail style (`release` / `trace` / `none`) and gameplay background mode implemented
 - Optional Tinged Columns conversion implemented for GUI/CLI (`--tinged-columns`)
+- Optional Sparse hidden ticks conversion implemented for GUI/CLI (`--sparse-hidden-ticks`)
 
 ### ❌ Pending
 - Green-line SV (timeScale) mapping not tested with complex SV charts
@@ -107,6 +109,9 @@ When enabled, convert objects on these 1-based mania lanes to USC `critical: tru
 - 6K: lanes 2 and 5 (`col` 1 and 4)
 
 This applies to both tap `single` objects and hold `slide` objects. Keep it disabled by default.
+
+### Sparse Hidden Ticks
+NextRUSH+ slide conversion normally generates `TransientHiddenTickNote` every `0.5` beat between slide endpoints. Sparse hidden ticks mode uses a `1.0` beat interval instead. Keep it disabled by default and use it only for dense LN charts that appear to over-penalize slide body misses.
 
 ### Dependency Policy
 The stdlib-only restriction is removed. Prefer the best implementation result over avoiding dependencies.
@@ -164,7 +169,7 @@ python osu_mania_to_scp.py testdata/4K.osz --engine engine.scp --out output.scp 
 
 # Merge multiple .osz files
 python osu_mania_to_scp.py testdata/4K.osz testdata/5K.osz --engine engine.scp \
-    --out merged.scp --merge --tail-mode trace --background-mode original --tinged-columns
+    --out merged.scp --merge --tail-mode none --background-mode original --tinged-columns --sparse-hidden-ticks
 ```
 
 ### GUI Usage

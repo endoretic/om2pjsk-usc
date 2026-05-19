@@ -31,6 +31,8 @@ from .nextrush_leveldata import (
 ProgressCallback = Callable[[int, int, str], None]
 
 BACKGROUND_MODES = {"default", "original"}
+DEFAULT_HIDDEN_TICK_INTERVAL = 0.5
+SPARSE_HIDDEN_TICK_INTERVAL = 1.0
 
 
 @dataclass
@@ -398,6 +400,7 @@ def build_scp(
     background_mode: str = "default",
     progress_callback: Optional[ProgressCallback] = None,
     tinged_columns: bool = False,
+    sparse_hidden_ticks: bool = False,
 ) -> int:
     """Build a complete .scp package from .osz + engine.scp.
 
@@ -413,6 +416,7 @@ def build_scp(
         package_name=Path(osz_path).stem,
         progress_callback=progress_callback,
         tinged_columns=tinged_columns,
+        sparse_hidden_ticks=sparse_hidden_ticks,
     )
 
 
@@ -426,6 +430,7 @@ def build_merged_scp(
     package_name: Optional[str] = None,
     progress_callback: Optional[ProgressCallback] = None,
     tinged_columns: bool = False,
+    sparse_hidden_ticks: bool = False,
 ) -> int:
     """Build one .scp package containing charts from one or more .osz files."""
     import sys
@@ -483,7 +488,14 @@ def build_merged_scp(
             tail_mode=tail_mode,
             tinged_columns=tinged_columns,
         )
-        leveldata = usc_to_leveldata(usc)
+        leveldata = usc_to_leveldata(
+            usc,
+            hidden_tick_interval=(
+                SPARSE_HIDDEN_TICK_INTERVAL
+                if sparse_hidden_ticks
+                else DEFAULT_HIDDEN_TICK_INTERVAL
+            ),
+        )
         ld_blob, ld_hash = leveldata_blob(leveldata)
         _put_repository_blob(out, ld_blob)
 
