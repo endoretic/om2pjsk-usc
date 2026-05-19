@@ -91,7 +91,7 @@ class ConversionWorker(QRunnable):
         tail_mode: str,
         background_mode: str,
         tinged_columns: bool,
-        sparse_hidden_ticks: bool,
+        guard_hidden_ticks: bool,
     ) -> None:
         super().__init__()
         self.entries = entries
@@ -101,7 +101,7 @@ class ConversionWorker(QRunnable):
         self.tail_mode = tail_mode
         self.background_mode = background_mode
         self.tinged_columns = tinged_columns
-        self.sparse_hidden_ticks = sparse_hidden_ticks
+        self.guard_hidden_ticks = guard_hidden_ticks
         self.signals = WorkerSignals()
 
     @Slot()
@@ -116,7 +116,7 @@ class ConversionWorker(QRunnable):
                     tail_mode=self.tail_mode,
                     background_mode=self.background_mode,
                     tinged_columns=self.tinged_columns,
-                    sparse_hidden_ticks=self.sparse_hidden_ticks,
+                    guard_hidden_ticks=self.guard_hidden_ticks,
                     progress_callback=self.signals.progress.emit,
                 )
                 if status != 0:
@@ -146,7 +146,7 @@ class ConversionWorker(QRunnable):
                         tail_mode=self.tail_mode,
                         background_mode=self.background_mode,
                         tinged_columns=self.tinged_columns,
-                        sparse_hidden_ticks=self.sparse_hidden_ticks,
+                        guard_hidden_ticks=self.guard_hidden_ticks,
                         progress_callback=report,
                     )
                     if status != 0:
@@ -484,21 +484,21 @@ class Om2UscWindow(QMainWindow):
         form.addWidget(self.background_combo, 4, 1, 1, 2)
 
         self.tinged_columns_checkbox = QCheckBox("Tinged Columns")
-        self.sparse_hidden_ticks_checkbox = QCheckBox("Sparse hidden ticks (For LN)")
+        self.guard_hidden_ticks_checkbox = QCheckBox("Guard LN start ticks")
         self.option_tip = HoverTip(self)
         self.option_tip.bind(
             self.tinged_columns_checkbox,
             "Marks configured columns as gold critical notes. 4K uses lanes 1/4, 5K uses lanes 2/4, and 6K uses lanes 2/5.",
         )
         self.option_tip.bind(
-            self.sparse_hidden_ticks_checkbox,
-            "Reduces slide body hidden ticks from every 0.5 beat to every 1.0 beat. Use this for dense LN charts that over-penalize slide body misses.",
+            self.guard_hidden_ticks_checkbox,
+            "Skips hidden ticks generated within 0.25 beat after an LN starts. Keeps the normal 0.5 beat tick spacing afterward.",
         )
         note_options = QHBoxLayout()
         note_options.setContentsMargins(0, 0, 0, 0)
         note_options.setSpacing(18)
         note_options.addWidget(self.tinged_columns_checkbox)
-        note_options.addWidget(self.sparse_hidden_ticks_checkbox)
+        note_options.addWidget(self.guard_hidden_ticks_checkbox)
         note_options.addStretch(1)
         form.addWidget(QLabel("Options"), 5, 0)
         form.addLayout(note_options, 5, 1, 1, 2)
@@ -865,7 +865,7 @@ class Om2UscWindow(QMainWindow):
             tail_mode=self.tail_combo.currentData(),
             background_mode=self.background_combo.currentData(),
             tinged_columns=self.tinged_columns_checkbox.isChecked(),
-            sparse_hidden_ticks=self.sparse_hidden_ticks_checkbox.isChecked(),
+            guard_hidden_ticks=self.guard_hidden_ticks_checkbox.isChecked(),
         )
         worker.signals.progress.connect(self.on_progress)
         worker.signals.message.connect(self.log_message)
@@ -883,7 +883,7 @@ class Om2UscWindow(QMainWindow):
             self.tail_combo,
             self.background_combo,
             self.tinged_columns_checkbox,
-            self.sparse_hidden_ticks_checkbox,
+            self.guard_hidden_ticks_checkbox,
             self.file_list,
         ):
             widget.setEnabled(enabled)

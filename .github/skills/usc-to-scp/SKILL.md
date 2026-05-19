@@ -50,7 +50,7 @@ For USC `slide` objects, follow the upstream NextRUSH+ `uscToLevelData` entity g
 - Use each connection's own `critical` and `judgeType` to choose Head/Tail archetypes.
 - Release tails are `NormalTailReleaseNote` / `CriticalTailReleaseNote`; trace tails are `NormalTailTraceNote` / `CriticalTailTraceNote`; `judgeType: "none"` tails become unjudged `AnchorNote`.
 - Generate `Connector` entities between slide joints, set `activeHead` / `activeTail`, and generate transient hidden ticks between long hold endpoints.
-- Upstream hidden tick spacing is every `0.5` beat; optional sparse LN mode uses every `1.0` beat.
+- Upstream hidden tick spacing is every `0.5` beat; optional LN start guard skips generated hidden ticks within `0.25` beat after a slide starts.
 - Do not collapse holds to only a head note plus tail note; that loses the active connector structure the engine expects.
 
 ## Resource Rules
