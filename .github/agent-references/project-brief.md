@@ -287,13 +287,15 @@ col 3 -> lane  4.5, size 1.5
 
 ## SV / TimeScale 映射
 
-osu!mania 绿线 SV 可初步映射到 USC `timeScaleGroup`：
+osu!mania 有效滚速映射到 USC `timeScaleGroup`：
 
 ```python
-time_scale = 100 / abs(beatLength)
+osu_sv = 100 / abs(beatLength)
+effective_scroll = current_bpm * effective_osu_sv
+time_scale = effective_scroll / first_effective_scroll
 ```
 
-MVP 可以只生成一个 `timeScaleGroup`：
+默认生成一个 `timeScaleGroup`：
 
 ```json
 {
@@ -304,7 +306,7 @@ MVP 可以只生成一个 `timeScaleGroup`：
 }
 ```
 
-如果存在绿线，则把绿线时间转换成 beat 后加入 changes：
+如果存在绿线，则先计算该 timing section 的 osu!mania 有效滚速，再归一化为 USC `timeScale`。不要把绿线 SV 原样写成 `timeScale`。同时必须处理红线重置：每个 TimingPoint 都会结束上一个 timing section，红线后如果没有同时间绿线，effective osu SV 回到 `1.0`；同时间红线+绿线按绿线的 `100 / abs(beatLength)` 作为 effective osu SV：
 
 ```json
 {
@@ -321,7 +323,7 @@ MVP 可以只生成一个 `timeScaleGroup`：
 需要实测的问题：
 
 - osu!mania 的实际滚速表现还受到玩家速度设置影响。
-- 绿线映射到 NextRUSH+ `timeScale` 后，视觉变化是否符合预期需要用复杂 SV 谱验证。
+- 复杂 SV 谱仍需要更多 Sonolus 客户端视觉验证；`dan.osz` 这类用绿线抵消 BPM 段的谱面应在 USC 中保持接近 `timeScale: 1.0`。
 
 ## LevelData 生成
 

@@ -28,6 +28,8 @@ TINGED_COLUMNS_BY_KEY = {
     6: {1, 4},
 }
 
+_FLOAT_TOLERANCE = 1e-6
+
 
 def mania_column_to_usc_lane_size(key_count: int, col: int) -> tuple[float, float]:
     """Map a 0-based mania column to USC lane center and note half-size."""
@@ -94,12 +96,45 @@ def time_ms_to_beat(time_ms: float, segments: List[BpmSegment]) -> float:
     # Find the segment that contains this time
     seg = segments[0]
     for s in segments:
-        if s.start_ms <= time_ms + 1e-6:
+        if s.start_ms <= time_ms + _FLOAT_TOLERANCE:
             seg = s
         else:
             break
 
     return seg.beat_at_start + (time_ms - seg.start_ms) / seg.beat_length_ms
+
+
+def _bpm_at_time(time_ms: float, segments: List[BpmSegment]) -> float:
+    """Return the BPM active at a source timestamp."""
+    if not segments:
+        return 120.0
+
+    seg = segments[0]
+    for s in segments:
+        if s.start_ms <= time_ms + _FLOAT_TOLERANCE:
+            seg = s
+        else:
+            break
+    return seg.bpm
+
+
+def _timing_point_groups(timing_points: List[TimingPoint]) -> List[List[TimingPoint]]:
+    """Group timing points that begin at effectively the same time."""
+    groups: List[List[TimingPoint]] = []
+    for tp in sorted(timing_points, key=lambda p: p.time):
+        if groups and abs(tp.time - groups[-1][0].time) < _FLOAT_TOLERANCE:
+            groups[-1].append(tp)
+        else:
+            groups.append([tp])
+    return groups
+
+
+def _effective_sv(group: List[TimingPoint]) -> float:
+    """Return the effective osu!mania SV after a same-time timing group."""
+    greens = [tp for tp in group if not tp.is_red]
+    if greens:
+        return greens[-1].sv_multiplier
+    return 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -144,20 +179,40 @@ class USCBuilder:
             })
 
     def add_time_scale_group(self) -> None:
-        """Add timeScaleGroup with changes from green timing points."""
-        greens = sorted(self.chart.green_timing_points, key=lambda tp: tp.time)
+        """Add timeScaleGroup from normalized effective osu!mania scroll speed."""
         changes: List[Dict[str, Any]] = []
 
         # Always include a base timeScale=1 at beat 0
         changes.append({"beat": 0.0, "timeScale": 1.0})
 
-        for g in greens:
-            beat = time_ms_to_beat(g.time, self.bpm_segments)
-            # Only add if it differs from the last
-            if abs(beat - changes[-1]["beat"]) < 1e-6:
-                changes[-1]["timeScale"] = g.sv_multiplier
+        effective_changes: List[tuple[float, float]] = []
+        for group in _timing_point_groups(self.chart.timing_points):
+            time = group[0].time
+            bpm = _bpm_at_time(time, self.bpm_segments)
+            sv = _effective_sv(group)
+            effective_changes.append((time, bpm * sv))
+
+        if not effective_changes:
+            self._objects.append({
+                "type": "timeScaleGroup",
+                "changes": changes,
+            })
+            return
+
+        base_scroll = effective_changes[0][1]
+        if abs(base_scroll) < _FLOAT_TOLERANCE:
+            base_scroll = 120.0
+
+        for time, effective_scroll in effective_changes:
+            time_scale = effective_scroll / base_scroll
+            beat = time_ms_to_beat(time, self.bpm_segments)
+
+            if abs(beat - changes[-1]["beat"]) < _FLOAT_TOLERANCE:
+                changes[-1]["timeScale"] = time_scale
+            elif abs(time_scale - changes[-1]["timeScale"]) < _FLOAT_TOLERANCE:
+                continue
             else:
-                changes.append({"beat": beat, "timeScale": g.sv_multiplier})
+                changes.append({"beat": beat, "timeScale": time_scale})
 
         self._objects.append({
             "type": "timeScaleGroup",
