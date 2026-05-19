@@ -2,7 +2,7 @@
 
 ## Architecture
 
-**om2usc** — osu!mania beatmaps (.osz) → USC JSON → Sonolus LevelData → SCP package converter.
+**om2usc** — Osu!Mania beatmaps → Project Sekai-compatible USC → NextRUSH+ LevelData → Sonolus SCP.
 
 Primary subsystem:
 - **Converter** (`src/` + `osu_mania_to_scp.py`): Main pipeline — parse .osu, convert to USC, serialize LevelData, package .scp. Keep the conversion core reusable, but third-party dependencies are allowed when they materially improve GUI, packaging, media handling, or reliability.

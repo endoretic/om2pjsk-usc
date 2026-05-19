@@ -1,11 +1,13 @@
 ---
 name: osu-mania-to-usc
-description: "Convert osu!mania .osz/.osu beatmaps into USC JSON only. Use when Codex needs to parse osu!mania files, validate Mode:3 charts, extract timing/audio/background metadata, map mania columns to USC lanes, generate BPM/timeScaleGroup/single/slide USC objects, or debug the osu!mania to USC stage before any Sonolus SCP packaging."
+description: "Convert osu!mania .osz/.osu beatmaps into Project Sekai-compatible USC JSON only. Use when Codex needs to parse osu!mania files, validate Mode:3 charts, extract timing/audio/background metadata, map mania columns to USC lanes, generate BPM/timeScaleGroup/single/slide USC objects, or debug the osu!mania to Project Sekai USC stage before any Sonolus SCP packaging."
 ---
 
-# osu!mania -> USC
+# Osu!Mania → Project Sekai USC
 
 ## Scope
+
+This skill targets the Project Sekai-compatible USC dialect used by NextRUSH+, not generic USC.
 
 Use this skill only for the osu!mania input and USC output boundary.
 
