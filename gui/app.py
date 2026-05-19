@@ -69,6 +69,7 @@ class ConversionWorker(QRunnable):
         tail_mode: str,
         background_mode: str,
         tinged_columns: bool,
+        sparse_hidden_ticks: bool,
     ) -> None:
         super().__init__()
         self.entries = entries
@@ -78,6 +79,7 @@ class ConversionWorker(QRunnable):
         self.tail_mode = tail_mode
         self.background_mode = background_mode
         self.tinged_columns = tinged_columns
+        self.sparse_hidden_ticks = sparse_hidden_ticks
         self.signals = WorkerSignals()
 
     @Slot()
@@ -92,6 +94,7 @@ class ConversionWorker(QRunnable):
                     tail_mode=self.tail_mode,
                     background_mode=self.background_mode,
                     tinged_columns=self.tinged_columns,
+                    sparse_hidden_ticks=self.sparse_hidden_ticks,
                     progress_callback=self.signals.progress.emit,
                 )
                 if status != 0:
@@ -121,6 +124,7 @@ class ConversionWorker(QRunnable):
                         tail_mode=self.tail_mode,
                         background_mode=self.background_mode,
                         tinged_columns=self.tinged_columns,
+                        sparse_hidden_ticks=self.sparse_hidden_ticks,
                         progress_callback=report,
                     )
                     if status != 0:
@@ -338,10 +342,11 @@ class Om2UscWindow(QMainWindow):
         self.tail_combo = QComboBox()
         self.tail_combo.setView(QListView())
         tail_labels = {
+            "none": "Tail None",
             "release": "Tail Release",
             "trace": "Tail Trace",
         }
-        for mode in ["release", "trace"]:
+        for mode in ["release", "trace", "none"]:
             if mode in TAIL_MODES:
                 self.tail_combo.addItem(tail_labels[mode], mode)
         form.addWidget(QLabel("Hold tail"), 3, 0)
@@ -358,8 +363,18 @@ class Om2UscWindow(QMainWindow):
         self.tinged_columns_checkbox.setToolTip(
             "Convert notes on Tinged Columns to critical notes. 4K: lanes 1/4; 5K: lanes 2/4; 6K: lanes 2/5"
         )
+        self.sparse_hidden_ticks_checkbox = QCheckBox("Sparse hidden ticks (For LN)")
+        self.sparse_hidden_ticks_checkbox.setToolTip(
+            "Reduce generated slide body hidden ticks from every 0.5 beat to every 1.0 beat for dense long-note charts."
+        )
+        note_options = QHBoxLayout()
+        note_options.setContentsMargins(0, 0, 0, 0)
+        note_options.setSpacing(18)
+        note_options.addWidget(self.tinged_columns_checkbox)
+        note_options.addWidget(self.sparse_hidden_ticks_checkbox)
+        note_options.addStretch(1)
         form.addWidget(QLabel("Note color"), 5, 0)
-        form.addWidget(self.tinged_columns_checkbox, 5, 1, 1, 2)
+        form.addLayout(note_options, 5, 1, 1, 2)
 
         self.convert_button = QPushButton("Convert")
         self.convert_button.setObjectName("PrimaryButton")
@@ -668,6 +683,7 @@ class Om2UscWindow(QMainWindow):
             tail_mode=self.tail_combo.currentData(),
             background_mode=self.background_combo.currentData(),
             tinged_columns=self.tinged_columns_checkbox.isChecked(),
+            sparse_hidden_ticks=self.sparse_hidden_ticks_checkbox.isChecked(),
         )
         worker.signals.progress.connect(self.on_progress)
         worker.signals.message.connect(self.log_message)
@@ -685,6 +701,7 @@ class Om2UscWindow(QMainWindow):
             self.tail_combo,
             self.background_combo,
             self.tinged_columns_checkbox,
+            self.sparse_hidden_ticks_checkbox,
             self.file_list,
         ):
             widget.setEnabled(enabled)

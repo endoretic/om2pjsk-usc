@@ -56,8 +56,15 @@ def _nearly_equal(a: float, b: float, tolerance: float = _FLOAT_TOLERANCE) -> bo
     return abs(a - b) < tolerance
 
 
-def usc_to_leveldata(usc: Dict[str, Any], offset: float = 0.0) -> Dict[str, Any]:
+def usc_to_leveldata(
+    usc: Dict[str, Any],
+    offset: float = 0.0,
+    hidden_tick_interval: float = 0.5,
+) -> Dict[str, Any]:
     """Convert a USC dict to NextRUSH+ LevelData."""
+    if hidden_tick_interval <= 0:
+        raise ValueError("hidden_tick_interval must be positive")
+
     usc_offset = float(usc.get("offset", 0.0))
     objects: List[Dict[str, Any]] = usc.get("objects", [])
 
@@ -165,7 +172,8 @@ def usc_to_leveldata(usc: Dict[str, Any], offset: float = 0.0) -> Dict[str, Any]
         pending_segment_connectors: List[EntityBuilder] = []
 
         step_size = max(1, len(connections) - 1)
-        next_hidden_tick_beat = math.floor(float(connections[0].get("beat", 0)) * 2 + 1) / 2
+        start_beat = float(connections[0].get("beat", 0))
+        next_hidden_tick_beat = math.floor(start_beat / hidden_tick_interval + 1) * hidden_tick_interval
 
         for step_idx, conn in enumerate(connections):
             conn_type = conn.get("type", "")
@@ -275,7 +283,7 @@ def usc_to_leveldata(usc: Dict[str, Any], offset: float = 0.0) -> Dict[str, Any]
                         hidden.set("attachHead", prev_joint)
                         hidden.set("attachTail", entity)
                         all_entities.append(hidden)
-                        next_hidden_tick_beat += 0.5
+                        next_hidden_tick_beat += hidden_tick_interval
 
                     connector = EntityBuilder("Connector")
                     connector.set("head", prev_joint)

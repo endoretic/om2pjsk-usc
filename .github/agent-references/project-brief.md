@@ -28,7 +28,7 @@ Windows GUI 目标：
 - 视觉风格优先考虑 Win11 acrylic / 半透明 / 扁平化效果，并允许轻微日式动漫风。
 - 支持批量导入 `.osz`、转换进度条、随机背景预览、导出路径选择。
 - 支持 1 个 `.osz` 输出 1 个 `.scp`，也支持多个 `.osz` 合并输出为 1 个 `.scp`。
-- 支持配置 hold/slide 结尾判定类型，目前只保留 `release` / `trace`，以及游玩背景使用原背景资源或 NextRUSH+ 默认背景。
+- 支持配置 hold/slide 结尾判定类型，目前支持 `release` / `trace` / `none`，以及游玩背景使用原背景资源或 NextRUSH+ 默认背景。
 
 推荐阶段目标：
 
@@ -522,7 +522,7 @@ GUI 应继续复用 `src/` 下转换核心：
 
 - `gui/app.py` 只负责界面、文件选择、随机背景预览和后台 worker。
 - SCP 生成走 `src/scp_writer.py` 的 `build_scp()` / `build_merged_scp()`。
-- 长条尾类型通过 `tail_mode` 传入 `src/osu_to_usc.py`，当前只支持 `release` / `trace`。
+- 长条尾类型通过 `tail_mode` 传入 `src/osu_to_usc.py`，当前支持 `release` / `trace` / `none`。
 - 游玩背景通过 `background_mode` 传入 `src/scp_writer.py`。
 
 ## 分步 TODO

@@ -153,6 +153,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="Use NextRUSH+ default gameplay background or generated original osu backgrounds")
     parser.add_argument("--tinged-columns", action="store_true",
                         help="Convert notes on Tinged Columns to critical notes (4K: 1/4, 5K: 2/4, 6K: 2/5)")
+    parser.add_argument("--sparse-hidden-ticks", action="store_true",
+                        help="Reduce generated slide body hidden ticks for dense long-note charts")
 
     args = parser.parse_args(argv)
 
@@ -199,6 +201,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 tail_mode=args.tail_mode,
                 background_mode=args.background_mode,
                 tinged_columns=args.tinged_columns,
+                sparse_hidden_ticks=args.sparse_hidden_ticks,
             )
 
         if len(args.input) == 1:
@@ -213,6 +216,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 tail_mode=args.tail_mode,
                 background_mode=args.background_mode,
                 tinged_columns=args.tinged_columns,
+                sparse_hidden_ticks=args.sparse_hidden_ticks,
             )
 
         if not args.out_dir:
@@ -231,6 +235,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 tail_mode=args.tail_mode,
                 background_mode=args.background_mode,
                 tinged_columns=args.tinged_columns,
+                sparse_hidden_ticks=args.sparse_hidden_ticks,
             )
         return status
 

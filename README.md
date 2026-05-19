@@ -13,9 +13,10 @@ This project does not target every USC format. Its USC output is designed for th
 - Converts valid Osu!Mania charts from `.osz` packages.
 - Supports 4K, 5K, and 6K charts.
 - Converts taps to USC `single` objects and holds to USC `slide` objects.
-- Supports `release` and `trace` hold tail styles.
+- Supports `release`, `trace`, and `none` hold tail styles.
 - Converts BPM segments and timing-based time scale groups.
 - Supports optional Tinged Columns critical-note conversion.
+- Supports optional sparse hidden ticks for dense long-note charts.
 - Exports one `.scp` per `.osz`, or merges multiple `.osz` packages into one `.scp`.
 - Provides a Windows GUI with drag-and-drop import, progress display, batch export options, and background preview.
 
@@ -81,9 +82,10 @@ Useful conversion options:
 
 | Option | Description |
 | --- | --- |
-| `--tail-mode {release,trace}` | Hold tail judgment style. |
+| `--tail-mode {none,release,trace}` | Hold tail judgment style. Defaults to `release`; `none` creates an unjudged slide endpoint. |
 | `--background-mode {default,original}` | Use the NextRUSH+ default gameplay background or generated backgrounds from the source beatmap. |
 | `--tinged-columns` | Mark configured columns as critical notes: 4K lanes 1/4, 5K lanes 2/4, 6K lanes 2/5. |
+| `--sparse-hidden-ticks` | Generate slide body hidden ticks every 1.0 beat instead of every 0.5 beat. |
 | `--out-dir DIR` | Output directory for batch conversion when not using `--merge`. |
 
 ## Project Layout
@@ -123,5 +125,3 @@ MIT. See [LICENSE](LICENSE).
 - [osu!](https://osu.ppy.sh) for the beatmap format and community.
 - [Sonolus](https://sonolus.com) for the rhythm game engine platform.
 - [NextRUSH+](https://github.com/UntitledCharts/sonolus-next-rush-engine) for the target Sonolus engine.
-rts/sonolus-next-rush-engine) — target Sonolus engine
-- [SCP Repacker](https://github.com/endoretic/SCP-Repacker) — reference implementation for SCP handling
