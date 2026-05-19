@@ -255,14 +255,11 @@ first_red_time_ms -> beat 0
 { "type": "bpm", "beat": 0, "bpm": 180 }
 ```
 
-高优先级待验证点：
+offset 规则：
 
 - NextRUSH+ `uscToLevelData()` 会把 `usc.offset` 写入 `bgmOffset`。
-- 对 osu 来说，`usc.offset` 的符号必须实测确认。
-- 候选值：
-  - `usc.offset = -first_red_time_ms / 1000`
-  - 或 `usc.offset = first_red_time_ms / 1000`
-- 不要在确认前把 offset 逻辑封死。先用一个很小的测试谱导入 Sonolus，确认第一个节拍和音乐是否对齐。
+- 对 osu!mania 来说，第一条红线作为 USC beat 0。
+- 使用 `usc.offset = first_red_time_ms / 1000`，把 beat 0 放回原 `.osu` 音频时间轴。
 
 ## 轨道与宽度映射
 
@@ -503,7 +500,6 @@ python osu_mania_to_scp.py 4K.osz --engine engine.scp --out 4K.scp
 --include-all
 --skip-empty
 --lane-width-scale 1.0
---offset-sign auto|positive|negative
 --no-sv
 ```
 
@@ -565,15 +561,11 @@ GUI 应继续复用 `src/` 下转换核心：
 8. 输出 `.usc.json`。
 9. 用 `testdata/Next_Insane.usc` 对照 USC 大致格式。
 
-### Phase 3：确认 offset
+### Phase 3：offset 处理
 
-1. 制作或挑选一个很小的 4K mania 谱面。
-2. 生成两版 USC：
-   - `usc.offset = -first_red_time_ms / 1000`
-   - `usc.offset = first_red_time_ms / 1000`
-3. 分别转 LevelData 并打包。
-4. 导入 Sonolus，确认哪一版音乐和音符对齐。
-5. 把确认结果写进新项目 README。
+1. 第一条红线作为 USC beat 0。
+2. 设置 `usc.offset = first_red_time_ms / 1000`。
+3. 用有非零第一红线的谱面验证音乐和音符对齐，例如 `testdata/6K.osz` 中的 Axium Crisis / FEHLT。
 
 ### Phase 4：移植 NextRUSH+ uscToLevelData
 
@@ -635,7 +627,7 @@ GUI 应继续复用 `src/` 下转换核心：
 
 ## 已知风险
 
-- `usc.offset` 符号必须实测。
+- `usc.offset` 使用正向第一红线秒数；带非零第一红线的谱面需要重点回归。
 - mania 轨道宽度到 NextRUSH+ `lane` / `size` 的映射以 `testdata/key4.usc`、`testdata/key5.usc`、`testdata/key6.usc` 为当前参考。
 - osu!mania SV 与 NextRUSH+ `timeScale` 不一定完全等价。
 - `.osu` hitsound / sampleSet 初期可能被忽略。

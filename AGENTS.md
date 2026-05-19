@@ -70,7 +70,6 @@ Functional goals:
 - Optional Tinged Columns conversion implemented for GUI/CLI (`--tinged-columns`)
 
 ### ❌ Pending
-- **Phase 3**: Validate `usc.offset` sign by importing a test .scp into real Sonolus
 - Green-line SV (timeScale) mapping not tested with complex SV charts
 - Original osu background as gameplay background is generated but still needs real Sonolus import validation
 - No hitsound preservation
@@ -140,8 +139,8 @@ Follow Sonolus resource types, not a blanket ".scp = gzip" rule:
 3. Confirm the package still contains `sonolus/engines/NextRUSH_P`; otherwise update `src/scp_writer.py` before converting.
 4. Run a smoke conversion, for example `python osu_mania_to_scp.py testdata/4K.osz --engine engine.scp --out .tmp/engine-check.scp`, then inspect/import the result.
 
-### Offset Sign — UNRESOLVED
-`usc.offset` direction is not yet validated against real Sonolus import. Do NOT assume `+` or `-`. Currently using `-first_red_time_ms / 1000`. All offset code is marked with `# TODO: verify offset sign in Sonolus`.
+### Offset Sign
+Use the first red TimingPoint as USC beat 0, and set `usc.offset = first_red_time_ms / 1000`. This places beat 0 at the original `.osu` audio timestamp after converting HitObject times to beats.
 
 ### Float Tolerance for TimingPoints
 Timing point times carry microsecond precision. Always use tolerance comparisons (e.g., `abs(t1 - t2) < 1e-6`), never `==`.

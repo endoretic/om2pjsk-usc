@@ -96,7 +96,13 @@ Use tolerance comparisons for TimingPoint times, for example `abs(a - b) < 1e-6`
 
 ### Offset
 
-`usc.offset` sign is unresolved against real Sonolus import. Keep the existing TODO marker and do not treat either sign as final without client validation.
+Use the first red TimingPoint as USC beat 0, and set `usc.offset` to the same source audio time in seconds:
+
+```python
+offset = first_red_time_ms / 1000
+```
+
+This keeps beat 0 aligned with its original `.osu` audio timestamp after converting note times to beats.
 
 ## Output
 

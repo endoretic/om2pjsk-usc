@@ -214,11 +214,11 @@ class USCBuilder:
 
     def build(self) -> Dict[str, Any]:
         """Build and return the full USC dictionary."""
-        # Set offset based on first red timing point
-        # TODO: verify offset sign in Sonolus
+        # First red timing point is beat 0 in USC; offset places that beat
+        # back on the source osu! audio timeline.
         first_red = self.chart.first_red_time
         if first_red is not None:
-            offset = -first_red / 1000.0
+            offset = first_red / 1000.0
         else:
             offset = 0.0
 
