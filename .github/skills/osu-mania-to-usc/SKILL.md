@@ -76,11 +76,20 @@ bpm = 60000 / beatLength
 
 The first red TimingPoint is beat 0. Build a timing model with `time_ms_to_beat()`.
 
-Green TimingPoints map to USC timeScale changes:
+Green TimingPoints contribute osu!mania SV:
 
 ```python
-timeScale = 100 / abs(beatLength)
+osu_sv = 100 / abs(beatLength)
 ```
+
+Build `timeScaleGroup` from normalized effective scroll speed, not raw green SV:
+
+```python
+effective_scroll = current_bpm * effective_osu_sv
+timeScale = effective_scroll / first_effective_scroll
+```
+
+Every TimingPoint ends the previous section. A red TimingPoint with no same-time green TimingPoint resets effective osu SV to `1.0`; a same-time green TimingPoint overrides that reset. This keeps BPM-only timing changes separate from USC hi-speed unless osu!mania effective scroll speed actually changes.
 
 Use tolerance comparisons for TimingPoint times, for example `abs(a - b) < 1e-6`; never rely on exact float equality.
 

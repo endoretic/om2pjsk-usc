@@ -70,9 +70,10 @@ Functional goals:
 - Configurable hold tail style (`release` / `trace` / `none`) and gameplay background mode implemented
 - Optional Tinged Columns conversion implemented for GUI/CLI (`--tinged-columns`)
 - Optional Sparse hidden ticks conversion implemented for GUI/CLI (`--sparse-hidden-ticks`)
+- Effective osu!mania SV resets at red TimingPoints are handled for `timeScaleGroup`
 
 ### ❌ Pending
-- Green-line SV (timeScale) mapping not tested with complex SV charts
+- Complex SV charts still need broader real-client visual validation
 - Original osu background as gameplay background is generated but still needs real Sonolus import validation
 - No hitsound preservation
 - 7K not implemented (only 4K/5K/6K for now)
@@ -149,6 +150,9 @@ Use the first red TimingPoint as USC beat 0, and set `usc.offset = first_red_tim
 
 ### Float Tolerance for TimingPoints
 Timing point times carry microsecond precision. Always use tolerance comparisons (e.g., `abs(t1 - t2) < 1e-6`), never `==`.
+
+### Effective SV / timeScale
+Build `timeScaleGroup` from normalized effective osu!mania scroll speed, not raw green SV. Use `effective_scroll = current_bpm * effective_osu_sv`, then `timeScale = effective_scroll / first_effective_scroll`. Every TimingPoint ends the previous timing section; if a red TimingPoint has no same-time green TimingPoint, effective osu SV resets to `1.0`. This keeps BPM-only timing changes separate from USC hi-speed and matters for marathon/dan maps that use green points only to compensate specific BPM sections.
 
 ## Build and Test
 
