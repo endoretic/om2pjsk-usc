@@ -148,6 +148,8 @@ Follow Sonolus resource types, not a blanket ".scp = gzip" rule:
 ### Offset Sign
 Use the first red TimingPoint as USC beat 0, and set `usc.offset = first_red_time_ms / 1000`. This places beat 0 at the original `.osu` audio timestamp after converting HitObject times to beats.
 
+Do not emit negative `#BEAT` values for note objects. Some osu files place opening HitObjects slightly before the first red TimingPoint; clamp converted tap/hold beats to `0` so Sonolus input entities can despawn and the result skip state can activate.
+
 ### Float Tolerance for TimingPoints
 Timing point times carry microsecond precision. Always use tolerance comparisons (e.g., `abs(t1 - t2) < 1e-6`), never `==`.
 
