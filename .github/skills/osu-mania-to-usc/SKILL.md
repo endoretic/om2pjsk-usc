@@ -100,6 +100,7 @@ Use tolerance comparisons for TimingPoint times, for example `abs(a - b) < 1e-6`
 - Hold `endTime` is stored in `objectParams` as `endTime:hitSample`.
 - Converted hold/slide tail judgment type is controlled by product config and currently supports `release`, `trace`, or `none`.
 - For converted holds, write `critical` on the `slide` object and on both `start`/`end` connections. The start connection uses `judgeType: "normal"`; the end connection uses `judgeType: "normal"` for release tails, `judgeType: "trace"` for trace tails, and `judgeType: "none"` for unjudged tails.
+- Do not emit negative note beats. If a HitObject is slightly before the first red TimingPoint, clamp its USC note beat to `0`; negative input entities can prevent Sonolus from reaching the skip/result state.
 - Optional Tinged Columns config may convert specific lanes to USC `critical: true`: 4K lanes 1/4, 5K lanes 2/4, 6K lanes 2/5. These lane numbers are 1-based from left to right.
 - Tinged Columns applies to both tap `single` objects and hold `slide` objects, and must stay disabled by default.
 

@@ -104,6 +104,11 @@ def time_ms_to_beat(time_ms: float, segments: List[BpmSegment]) -> float:
     return seg.beat_at_start + (time_ms - seg.start_ms) / seg.beat_length_ms
 
 
+def note_time_ms_to_beat(time_ms: float, segments: List[BpmSegment]) -> float:
+    """Convert note time to USC beat without emitting negative note beats."""
+    return max(0.0, time_ms_to_beat(time_ms, segments))
+
+
 def _bpm_at_time(time_ms: float, segments: List[BpmSegment]) -> float:
     """Return the BPM active at a source timestamp."""
     if not segments:
@@ -226,7 +231,7 @@ class USCBuilder:
         for ho in self.chart.hit_objects:
             col = ho.lane(key_count)
             lane, size = mania_column_to_usc_lane_size(key_count, col)
-            beat = time_ms_to_beat(ho.time, self.bpm_segments)
+            beat = note_time_ms_to_beat(ho.time, self.bpm_segments)
             critical = self.tinged_columns and is_tinged_column(key_count, col)
 
             if not ho.is_hold:
@@ -242,7 +247,7 @@ class USCBuilder:
                 })
             else:
                 # Hold → slide
-                end_beat = time_ms_to_beat(ho.end_time, self.bpm_segments)
+                end_beat = max(beat, note_time_ms_to_beat(ho.end_time, self.bpm_segments))
                 tail_connection = {
                     "type": "end",
                     "beat": end_beat,
