@@ -1,0 +1,4 @@
+interface:
+  display_name: "NextRUSH+ Sync"
+  short_description: "Sync upstream NextRUSH+ engine updates"
+  default_prompt: "Use $nextrush-upstream-sync to check upstream NextRUSH+ and update this project's bundled engine."
