@@ -12,6 +12,7 @@ Detailed agent references live in `.github/skills/`:
 - `osu-mania-to-usc/SKILL.md`: osu!mania `.osz/.osu` parsing and USC JSON generation only
 - `osu-mania-to-usc/references/osu-mania-osu-syntax-notes.md`: .osu parsing details
 - `usc-to-scp/SKILL.md`: USC/LevelData/resources to Sonolus `.scp` packaging
+- `nextrush-upstream-sync/SKILL.md`: upstream NextRUSH+ version checks, converter diff review, and `engine.scp` runtime sync
 - `.github/agent-references/project-brief.md`: broader project history and full pipeline notes
 
 ### New Converter Module Layout
@@ -140,10 +141,11 @@ Follow Sonolus resource types, not a blanket ".scp = gzip" rule:
 
 ### Updating NextRUSH+ Engine Resources
 `engine.scp` is the bundled NextRUSH+ resource pack used when creating output packages. To update it:
-1. Get a newer compatible NextRUSH+ Sonolus `.scp` resource pack from the upstream project or its release/build output.
-2. Replace the repository-root `engine.scp`.
+1. Check upstream <https://github.com/UntitledCharts/sonolus-next-rush-engine> for the latest tag and GitHub Actions `next-rush-engine` artifact, or build upstream locally with `sonolus-py build`.
+2. Repack the generated `build/dist/engine/{EngineConfiguration,EnginePlayData,EngineWatchData,EnginePreviewData,EngineTutorialData,EngineRom}` blobs into the repository-root `engine.scp`.
 3. Confirm the package still contains `sonolus/engines/NextRUSH_P`; otherwise update `src/scp_writer.py` before converting.
-4. Run a smoke conversion, for example `python osu_mania_to_scp.py testdata/4K.osz --engine engine.scp --out .tmp/engine-check.scp`, then inspect/import the result.
+4. Current bundled engine runtime is built from upstream `v2.0.1`.
+5. Run a smoke conversion, for example `python osu_mania_to_scp.py testdata/dan.osz --engine engine.scp --out .tmp/engine-check.scp --single-difficulty "~ 10th ~ (Marathon)"`, then inspect/import the result.
 
 ### Offset Sign
 Use the first red TimingPoint as USC beat 0, and set `usc.offset = first_red_time_ms / 1000`. This places beat 0 at the original `.osu` audio timestamp after converting HitObject times to beats.
@@ -161,20 +163,20 @@ Build `timeScaleGroup` from normalized effective osu!mania scroll speed, not raw
 ### CLI Usage
 ```bash
 # List charts in .osz
-python osu_mania_to_scp.py testdata/4K.osz --list
+python osu_mania_to_scp.py testdata/dan.osz --list
 
 # Dump USC JSON for inspection
-python osu_mania_to_scp.py testdata/4K.osz --dump-usc output_dir
+python osu_mania_to_scp.py testdata/dan.osz --dump-usc output_dir
 
 # Full conversion (all difficulties)
-python osu_mania_to_scp.py testdata/4K.osz --engine engine.scp --out output.scp
+python osu_mania_to_scp.py testdata/dan.osz --engine engine.scp --out output.scp
 
 # Single difficulty only
-python osu_mania_to_scp.py testdata/4K.osz --engine engine.scp --out output.scp \
-    --single-difficulty "(Jesen) Grin (Re:Work Edit) 1.08x (high)"
+python osu_mania_to_scp.py testdata/dan.osz --engine engine.scp --out output.scp \
+    --single-difficulty "~ 10th ~ (Marathon)"
 
 # Merge multiple .osz files
-python osu_mania_to_scp.py testdata/4K.osz testdata/5K.osz --engine engine.scp \
+python osu_mania_to_scp.py first.osz second.osz --engine engine.scp \
     --out merged.scp --merge --tail-mode none --background-mode original --tinged-columns --guard-hidden-ticks
 ```
 
@@ -188,7 +190,5 @@ powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
 ```
 
 ### Test Data
-- `testdata/4K.osz`, `testdata/5K.osz`, `testdata/6K.osz` — input beatmaps
+- `testdata/dan.osz` — input beatmap pack
 - `engine.scp` — NextRUSH+ resource pack
-- `testdata/Next_Insane.usc` — reference USC format
-- `testdata/Next_Insane.scp` — reference SCP with complex LevelData
