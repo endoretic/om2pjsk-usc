@@ -61,7 +61,7 @@ Rules:
 - If `js/src/usc` has no diff, do not edit `src/nextrush_leveldata.py` for engine runtime-only changes.
 - If `js/src/usc/index.ts` changes schema fields that this project emits, update `src/osu_to_usc.py` or docs as needed.
 - If `js/src/usc/convert.ts` changes entity graph generation, port the relevant subset into `src/nextrush_leveldata.py`.
-- Keep local-only options such as Guard LN start ticks deliberate; do not remove them just because upstream lacks them.
+- The LevelData converter is shared with Next SEKAI. Validate changes against both bundled runtimes, without changing the internal USC dialect.
 
 ## Engine Runtime Sync
 
@@ -71,12 +71,17 @@ Upstream release pages may have no direct `.scp` asset. Prefer these sources, in
 1. GitHub Actions `next-rush-engine` artifact matching the latest tag SHA, if accessible.
 2. A local upstream build with `sonolus-py build`.
 
-If building locally:
+If building locally, read the selected upstream revision's `pyproject.toml`, `uv.lock`, and `.github/workflows/build.yml` first. Use its own environment and locked dependencies, not this application's GUI environment. For example, upstream v2.16.3 requires Python >=3.14 and `sonolus-py~=1.2.5`; the older 0.16.0 build instructions are not compatible.
 
-```bash
-python -m pip install --target .tmp/sonolus-build-deps "sonolus-py~=0.16.0"
-$env:PYTHONPATH = "$PWD/.tmp/sonolus-build-deps"
-.tmp/sonolus-build-deps/bin/sonolus-py.exe build
+For v2.16.3, the upstream workflow sets `NEXT_RUSH_SKIP_SERVER_RESOURCES=1` to avoid downloading development-only server resources:
+
+```powershell
+Push-Location .tmp/nr-upstream-history
+uv sync --locked --python 3.14
+$env:NEXT_RUSH_SKIP_SERVER_RESOURCES = "1"
+uv run sonolus-py build
+Remove-Item Env:NEXT_RUSH_SKIP_SERVER_RESOURCES
+Pop-Location
 ```
 
 Build output should include:
@@ -90,7 +95,7 @@ build/dist/engine/EngineTutorialData
 build/dist/engine/EngineRom
 ```
 
-If Python 3.13 exposes upstream type-annotation import issues, patch only the temporary upstream checkout. Do not commit those compatibility edits to this repository.
+Build the pinned upstream source with a supported Python version. Do not patch its annotations to force a build with an older interpreter. Record the exact tag and commit SHA; tags and release timestamps alone are not enough to identify the source used.
 
 ## Repack `engine.scp`
 
@@ -100,7 +105,8 @@ Use the bundled helper after `build/dist/engine` exists:
 python .github/skills/nextrush-upstream-sync/scripts/repack_engine_scp.py \
   --engine-scp engine.scp \
   --dist-engine .tmp/nr-upstream-history/build/dist/engine \
-  --upstream-version v2.0.1
+  --upstream-version v2.16.3 \
+  --upstream-commit 6d6dd372985cd35154282129b4031adc9874b615
 ```
 
 The script:
@@ -126,10 +132,10 @@ python -c "import json, zipfile; z=zipfile.ZipFile('engine.scp'); e=json.loads(z
 python osu_mania_to_scp.py testdata/dan.osz --engine engine.scp --out .tmp/engine-check.scp --single-difficulty "~ 10th ~ (Marathon)"
 ```
 
-If `pytest` is installed, also run:
+Run the automated tests for both targets:
 
 ```bash
-python -m pytest
+python -m unittest discover -s tests -v
 ```
 
-Report when pytest is unavailable instead of treating that as a conversion failure.
+Also smoke-test `--target-engine next-sekai` after shared converter changes. Distinguish these local checks from real Sonolus import/gameplay validation.

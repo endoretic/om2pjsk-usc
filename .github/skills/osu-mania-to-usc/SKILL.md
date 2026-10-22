@@ -9,6 +9,8 @@ description: "Convert osu!mania .osz/.osu beatmaps into Project Sekai-compatible
 
 This skill targets the Project Sekai-compatible USC dialect used by NextRUSH+, not generic USC.
 
+Selecting Next SEKAI downstream does not change this intermediate dialect. Its native LevelData packaging belongs to the `usc-to-scp` skill, not to this stage.
+
 Use this skill only for the osu!mania input and USC output boundary.
 
 In scope:
@@ -19,7 +21,7 @@ In scope:
 - Dump or inspect USC for correctness.
 
 Out of scope:
-- Converting USC to NextRUSH+ LevelData.
+- Converting USC to either target engine's native LevelData.
 - Building `sonolus/repository` resources.
 - Creating `.scp` packages.
 - Debugging Sonolus import/resource packaging.

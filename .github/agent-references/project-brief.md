@@ -2,6 +2,8 @@
 
 日期：2026-05-18
 
+现状（2026-10-22）：本文保留早期设计背景；当前实现和操作规范以 `AGENTS.md` 及两个转换 skill 为准。GUI 已支持 NextRUSH+ / Next SEKAI 目标选择，分别使用 `engine.scp`（v2.16.3）和 `engine_next_sekai.scp`（官方服务快照）。内部 USC 仍为 NextRUSH+ 方言，共享转换器直接生成两种引擎支持的 LevelData，不经过 Next SEKAI 自有的 USC 转换器。
+
 本文用于维护一个 Python-first 转换项目：读取 osu!mania `.osz` / `.osu` 谱面，把谱面转换为 USC，再使用 NextRUSH+ 的 LevelData 规则生成可导入 Sonolus 的 `.scp` 包。当前实现以 Python converter 为核心，下一阶段允许在其上增加 Windows GUI、图像处理和打包脚本；不再限制为标准库。
 
 ## 目标范围

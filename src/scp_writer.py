@@ -22,6 +22,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from .osu_parser import OsuChart
 from .osu_to_usc import osu_to_usc
+from .engines import DEFAULT_ENGINE, get_engine_profile
 from .nextrush_leveldata import (
     leveldata_blob,
     sha1_hex,
@@ -32,7 +33,6 @@ ProgressCallback = Callable[[int, int, str], None]
 
 BACKGROUND_MODES = {"default", "original"}
 DEFAULT_HIDDEN_TICK_INTERVAL = 0.5
-HIDDEN_TICK_START_GUARD_BEATS = 0.25
 
 
 @dataclass
@@ -295,6 +295,9 @@ def _build_background_item(
 ) -> Dict[str, Any]:
     """Build a Sonolus background item using the engine background template."""
     item = copy.deepcopy(template) if template else {}
+    # Generated backgrounds do not exist on the template's update server.
+    item.pop("source", None)
+    item.pop("authorUser", None)
     item.update({
         "name": background_name,
         "version": 2,
@@ -400,7 +403,7 @@ def build_scp(
     background_mode: str = "default",
     progress_callback: Optional[ProgressCallback] = None,
     tinged_columns: bool = False,
-    guard_hidden_ticks: bool = False,
+    target_engine: str = DEFAULT_ENGINE,
 ) -> int:
     """Build a complete .scp package from .osz + engine.scp.
 
@@ -416,7 +419,7 @@ def build_scp(
         package_name=Path(osz_path).stem,
         progress_callback=progress_callback,
         tinged_columns=tinged_columns,
-        guard_hidden_ticks=guard_hidden_ticks,
+        target_engine=target_engine,
     )
 
 
@@ -430,7 +433,7 @@ def build_merged_scp(
     package_name: Optional[str] = None,
     progress_callback: Optional[ProgressCallback] = None,
     tinged_columns: bool = False,
-    guard_hidden_ticks: bool = False,
+    target_engine: str = DEFAULT_ENGINE,
 ) -> int:
     """Build one .scp package containing charts from one or more .osz files."""
     import sys
@@ -444,6 +447,12 @@ def build_merged_scp(
         return 1
 
     try:
+        profile = get_engine_profile(target_engine)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    try:
         chart_sources = _collect_chart_sources(paths, single_version)
         engine_entries = _read_zip_entries(engine_path)
     except (OSError, zipfile.BadZipFile) as exc:
@@ -454,7 +463,7 @@ def build_merged_scp(
         print("No valid mania charts found.", file=sys.stderr)
         return 1
 
-    engine_item, background_template = _load_engine_items(engine_entries, engine_path)
+    engine_item, background_template = _load_engine_items(engine_entries, engine_path, target_engine)
     if engine_item is None:
         return 1
 
@@ -472,7 +481,7 @@ def build_merged_scp(
         chart = source.chart
         source_slug = _safe_slug(Path(source.osz_path).stem, fallback="osz", max_length=48)
         level_name = _unique_name(
-            f"om2usc-{source_slug}-{chart.version}",
+            f"{profile.level_prefix}-{source_slug}-{chart.version}",
             used_level_names,
         )
         print(f"  Processing: {chart.version} ({chart.key_count}K, {len(chart.hit_objects)} notes)")
@@ -491,11 +500,6 @@ def build_merged_scp(
         leveldata = usc_to_leveldata(
             usc,
             hidden_tick_interval=DEFAULT_HIDDEN_TICK_INTERVAL,
-            hidden_tick_start_guard=(
-                HIDDEN_TICK_START_GUARD_BEATS
-                if guard_hidden_ticks
-                else 0.0
-            ),
         )
         ld_blob, ld_hash = leveldata_blob(leveldata)
         _put_repository_blob(out, ld_blob)
@@ -548,7 +552,7 @@ def build_merged_scp(
             and background_configuration_hash
         ):
             background_name = _unique_name(
-                f"om2usc-bg-{source_slug}-{chart.version}",
+                f"{profile.level_prefix}-bg-{source_slug}-{chart.version}",
                 used_background_names,
             )
             background_item = _build_background_item(
@@ -588,7 +592,7 @@ def build_merged_scp(
         )
 
     resolved_package_name = package_name or _package_name_from_paths(paths)
-    package_title = f"om2usc-{_safe_slug(resolved_package_name, fallback='package')}"
+    package_title = f"{profile.level_prefix}-{_safe_slug(resolved_package_name, fallback='package')}"
     out["sonolus/levels/list"] = _json_dump({"pageCount": 1, "items": level_items})
     out["sonolus/levels/info"] = _json_dump(_levels_info(level_items))
     out["sonolus/info"] = _json_dump(_service_info(package_title))
@@ -644,23 +648,29 @@ def _collect_chart_sources(
 def _load_engine_items(
     engine_entries: Dict[str, bytes],
     engine_path: str,
+    target_engine: str = DEFAULT_ENGINE,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
     import sys
 
-    engine_doc = _json_load_safe(engine_entries, "sonolus/engines/NextRUSH_P")
+    profile = get_engine_profile(target_engine)
+    engine_doc = _json_load_safe(engine_entries, f"sonolus/engines/{profile.item_name}")
     if not engine_doc:
-        print(f"Engine not found in {engine_path}", file=sys.stderr)
+        print(f"{profile.title} engine '{profile.item_name}' not found in {engine_path}", file=sys.stderr)
         return None, None
     engine_item = engine_doc.get("item", engine_doc) if isinstance(engine_doc, dict) else engine_doc
+    if not isinstance(engine_item, dict) or engine_item.get("name") != profile.item_name:
+        print(f"Invalid {profile.title} engine item in {engine_path}", file=sys.stderr)
+        return None, None
 
-    background_doc = _json_load_safe(engine_entries, "sonolus/backgrounds/PLEASE-SELECT")
-    background_template = None
+    background_template = engine_item.get("background")
+    if not isinstance(background_template, dict):
+        print(f"Missing default background for {profile.title} in {engine_path}", file=sys.stderr)
+        return None, None
+    background_doc = _json_load_safe(
+        engine_entries, f"sonolus/backgrounds/{background_template.get('name', '')}"
+    )
     if isinstance(background_doc, dict):
         template = background_doc.get("item")
-        if isinstance(template, dict):
-            background_template = template
-    if background_template is None and isinstance(engine_item, dict):
-        template = engine_item.get("background")
         if isinstance(template, dict):
             background_template = template
 

@@ -18,6 +18,7 @@ from typing import Dict, List, Optional
 
 from src.osu_parser import OsuChart, parse_osu
 from src.osu_to_usc import TAIL_MODES, osu_to_usc_json
+from src.engines import DEFAULT_ENGINE, ENGINE_PROFILES, default_engine_path
 
 
 def read_osz(path: str) -> "OrderedDict[str, bytes]":
@@ -141,7 +142,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--dump-usc", metavar="DIR", help="Dump USC JSON to directory")
     parser.add_argument("--single-difficulty", metavar="VERSION",
                         help="Process only the specified difficulty version name")
-    parser.add_argument("--engine", metavar="SCP", help="Path to engine.scp resource pack")
+    parser.add_argument("--target-engine", choices=tuple(ENGINE_PROFILES), default=DEFAULT_ENGINE,
+                        help="Target Sonolus engine (default: nextrush)")
+    parser.add_argument("--engine", metavar="SCP", help="Override the selected target's bundled resource pack")
     parser.add_argument("--out", metavar="SCP", help="Output .scp file path")
     parser.add_argument("--out-dir", metavar="DIR",
                         help="Output directory for one .scp per input when multiple inputs are provided")
@@ -150,11 +153,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--tail-mode", choices=sorted(TAIL_MODES), default="release",
                         help="Hold tail style for converted slide endings")
     parser.add_argument("--background-mode", choices=("default", "original"), default="default",
-                        help="Use NextRUSH+ default gameplay background or generated original osu backgrounds")
+                        help="Use the target engine's default background or generated original osu backgrounds")
     parser.add_argument("--tinged-columns", action="store_true",
                         help="Convert notes on Tinged Columns to critical notes (4K: 1/4, 5K: 2/4, 6K: 2/5)")
-    parser.add_argument("--guard-hidden-ticks", action="store_true",
-                        help="Skip slide body hidden ticks generated too close to LN starts")
 
     args = parser.parse_args(argv)
 
@@ -184,8 +185,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
 
     if args.out or args.out_dir:
-        if not args.engine:
-            print("--engine is required when writing .scp output", file=sys.stderr)
+        engine_path = args.engine or str(default_engine_path(args.target_engine))
+        if not Path(engine_path).is_file():
+            print(f"Engine resource pack not found: {engine_path}", file=sys.stderr)
             return 1
         from src.scp_writer import build_merged_scp, build_scp
 
@@ -195,13 +197,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                 return 1
             return build_merged_scp(
                 args.input,
-                args.engine,
+                engine_path,
                 args.out,
                 single_version=args.single_difficulty,
                 tail_mode=args.tail_mode,
                 background_mode=args.background_mode,
                 tinged_columns=args.tinged_columns,
-                guard_hidden_ticks=args.guard_hidden_ticks,
+                target_engine=args.target_engine,
             )
 
         if len(args.input) == 1:
@@ -210,13 +212,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                 return 1
             return build_scp(
                 args.input[0],
-                args.engine,
+                engine_path,
                 args.out,
                 args.single_difficulty,
                 tail_mode=args.tail_mode,
                 background_mode=args.background_mode,
                 tinged_columns=args.tinged_columns,
-                guard_hidden_ticks=args.guard_hidden_ticks,
+                target_engine=args.target_engine,
             )
 
         if not args.out_dir:
@@ -229,19 +231,19 @@ def main(argv: Optional[List[str]] = None) -> int:
             output_path = out_dir / f"{Path(input_path).stem}.scp"
             status |= build_scp(
                 input_path,
-                args.engine,
+                engine_path,
                 str(output_path),
                 args.single_difficulty,
                 tail_mode=args.tail_mode,
                 background_mode=args.background_mode,
                 tinged_columns=args.tinged_columns,
-                guard_hidden_ticks=args.guard_hidden_ticks,
+                target_engine=args.target_engine,
             )
         return status
 
     # Default: list what's available
     print("Use --list to see available charts, --dump-usc to generate USC JSON,")
-    print("or --engine/--out to build a .scp package.\n")
+    print("or --out to build a .scp package with the selected target engine.\n")
     return cmd_list(read_osz(args.input[0]))
 
 

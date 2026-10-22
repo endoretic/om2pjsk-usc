@@ -1,6 +1,6 @@
 ---
 name: usc-to-scp
-description: "Package USC JSON charts and associated resources into Sonolus .scp packages for NextRUSH+. Use when Codex needs to convert USC to NextRUSH+ LevelData, build Sonolus repository blobs/SRLs, attach BGM/cover/background resources, construct levels/list/details/info/package documents, validate SCP imports, or debug Sonolus resource packaging after USC JSON already exists."
+description: "Package the project's USC JSON and associated resources into Sonolus .scp packages for NextRUSH+ or Next SEKAI. Use when converting USC to native LevelData, selecting target engine resources, building repository blobs/SRLs, constructing levels/list/details/info/package documents, validating imports, or debugging resource packaging."
 ---
 
 # USC -> SCP Packaging
@@ -10,7 +10,7 @@ description: "Package USC JSON charts and associated resources into Sonolus .scp
 Use this skill after USC JSON exists.
 
 In scope:
-- Convert USC JSON to NextRUSH+ LevelData.
+- Convert the project's USC JSON to shared NextRUSH+ / Next SEKAI LevelData.
 - Package LevelData, BGM, cover, preview, background, and engine resources.
 - Build Sonolus `.scp` ZIP entries.
 - Validate repository references and level details documents.
@@ -27,30 +27,42 @@ Use `osu-mania-to-usc` for the osu!mania -> USC stage.
 
 - Local packer: `src/scp_writer.py`
 - Local LevelData converter: `src/nextrush_leveldata.py`
-- Engine resources: `engine.scp`
+- Engine profiles: `src/engines.py`
+- Engine resources: `engine.scp`, `engine_next_sekai.scp`
 - Importable examples: `testdata/Next_Insane.scp`, `testdata/guide.scp`
 - Official Sonolus resource rules: <https://wiki.sonolus.com/custom-server-specs/misc/resources>
 - Official LevelItem schema: <https://wiki.sonolus.com/custom-server-specs/misc/level-item>
 - Official BackgroundItem schema: <https://wiki.sonolus.com/custom-server-specs/misc/background-item>
 - Upstream packer behavior: <https://github.com/Sonolus/sonolus-pack>
-- NextRUSH+ USC converter: <https://github.com/UntitledCharts/sonolus-next-rush-engine/tree/main/js/src/usc>
+- NextRUSH+ USC converter: <https://github.com/UntitledCharts/sonolus-next-rush-engine/tree/master/js/src/usc>
+- Next SEKAI source: <https://github.com/Next-SEKAI/sonolus-next-sekai-engine>
 
 ## Pipeline
 
 ```
-USC JSON -> NextRUSH+ LevelData -> gzipped LevelData blob
+Project USC JSON -> shared native LevelData -> gzipped LevelData blob
 resources -> sonolus/repository/<sha1>
 metadata -> sonolus/levels/list + sonolus/levels/<name> + info/package docs
 all entries -> .scp ZIP
 ```
 
-## NextRUSH+ Slide/Hold Conversion
+## Engine Selection
+
+Use `src/engines.py` to choose the bundled pack and expected engine item:
+- `nextrush`: `engine.scp` / `NextRUSH_P`.
+- `next-sekai`: `engine_next_sekai.scp` / `coconut-next-sekai-1`.
+
+Derive default resources from the selected engine item, not a hard-coded background name. Use the profile's distinct level/background prefix so imports for the two targets can coexist. Reject a custom pack if its engine identifier does not match the selected target.
+
+Keep the internal USC in the NextRUSH+ dialect. Next SEKAI's official USC converter expects a different schema; the project instead generates the shared native LevelData subset directly. Test emitted entities and imported fields against both bundled runtimes.
+
+## Slide/Hold Conversion
 
 For USC `slide` objects, follow the upstream NextRUSH+ `uscToLevelData` entity graph:
 - Use each connection's own `critical` and `judgeType` to choose Head/Tail archetypes.
 - Release tails are `NormalTailReleaseNote` / `CriticalTailReleaseNote`; trace tails are `NormalTailTraceNote` / `CriticalTailTraceNote`; `judgeType: "none"` tails become unjudged `AnchorNote`.
 - Generate `Connector` entities between slide joints, set `activeHead` / `activeTail`, and generate transient hidden ticks between long hold endpoints.
-- Upstream hidden tick spacing is every `0.5` beat; optional LN start guard skips generated hidden ticks within `0.25` beat after a slide starts.
+- Hidden ticks follow the `0.5`-beat grid strictly between endpoints, without an additional exclusion window after the head.
 - Do not collapse holds to only a head note plus tail note; that loses the active connector structure the engine expects.
 
 ## Resource Rules
@@ -136,7 +148,7 @@ Typical generated background configuration:
 {"blur":0,"mask":"#0000"}
 ```
 
-If using an engine-provided background template, preserve compatible fields such as `source`, then replace `name`, display text, and SRLs.
+Generated osu backgrounds are local items: remove the template's `source` and `authorUser` before replacing `name`, display text, and SRLs. `source` is an online update address, not attribution. Inheriting the engine server's address can cause collection updates to replace every generated image with that server's fallback background. Keep `source` only on unmodified upstream resources that actually exist on that server.
 
 ## Package Structure
 
@@ -146,7 +158,7 @@ Write at least:
 - `sonolus/levels/info`
 - `sonolus/levels/list`
 - `sonolus/levels/<level_name>`
-- copied engine/skin/background/effect/particle docs from `engine.scp`
+- copied engine/skin/background/effect/particle docs from the selected engine pack
 - all referenced `sonolus/repository/<hash>` blobs
 
 Use `sonolus/package`:
