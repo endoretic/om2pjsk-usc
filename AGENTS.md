@@ -2,7 +2,7 @@
 
 ## Architecture
 
-**om2usc** — Osu!Mania beatmaps → Project Sekai-compatible USC → NextRUSH+ LevelData → Sonolus SCP.
+**om2usc** — Osu!Mania beatmaps → Project Sekai-compatible USC → NextRUSH+ / Next SEKAI LevelData → Sonolus SCP.
 
 Primary subsystem:
 - **Converter** (`src/` + `osu_mania_to_scp.py`): Main pipeline — parse .osu, convert to USC, serialize LevelData, package .scp. Keep the conversion core reusable, but third-party dependencies are allowed when they materially improve GUI, packaging, media handling, or reliability.
@@ -20,10 +20,11 @@ Detailed agent references live in `.github/skills/`:
 ```
 osu_mania_to_scp.py          # CLI entry point
 src/
+  engines.py                 # Target engine profiles and bundled resource paths
   osu_parser.py              # Parse .osu sections → OsuChart
   osu_to_usc.py              # OsuChart → USC JSON (BPM segments, beat conversion, lane mapping)
-  nextrush_leveldata.py      # USC → NextRUSH+ LevelData (ported from upstream TS)
-  scp_writer.py              # LevelData + engine.scp → output .scp (resource reuse, validation)
+  nextrush_leveldata.py      # USC → shared LevelData (ported from NextRUSH+ TS)
+  scp_writer.py              # LevelData + selected engine pack → output .scp
 gui/
   app.py                     # PySide6 Windows GUI
 om2usc_gui.py                # GUI launcher
@@ -37,7 +38,7 @@ om2usc_gui.py                # GUI launcher
 
 ## Windows GUI Direction
 
-The next product target is a Windows desktop GUI on top of the existing converter.
+The Windows desktop GUI is built on top of the reusable converter.
 
 UI goals:
 - Win11-like acrylic / transparent / semi-transparent flat design
@@ -50,18 +51,18 @@ Functional goals:
 - batch import multiple `.osz` packages
 - configurable hold/slide tail judgment type: `release`, `trace`, or `none`
 - optional Tinged Columns conversion: 4K lanes 1/4, 5K lanes 2/4, 6K lanes 2/5 become critical notes
-- optional LN start hidden tick guard for dense LN charts
+- selectable NextRUSH+ or Next SEKAI target engine
 - export mode: one `.scp` per `.osz`
 - export mode: merge multiple `.osz` packages into one `.scp`
 - selectable output path
-- gameplay background option: original osu background resource or NextRUSH+ default background
+- gameplay background option: original osu background resource or selected engine's default background
 
 ## Implementation Status
 
 ### ✅ Completed
 - **Phase 1**: .osz/.osu parsing — Mode:3 validation, TimingPoints (red/green), HitObjects (tap/hold), key count from CircleSize
 - **Phase 2**: USC JSON generation — BPM segments, beat conversion (time→beat), lane/size mapping (12-unit stage), single/slide objects
-- **Phase 4**: NextRUSH+ LevelData — EntityBuilder pattern, #BPM_CHANGE, #TIMESCALE_GROUP, note archetypes (NormalTapNote, NormalHeadTapNote, NormalTailReleaseNote), SimLine generation
+- **Phase 4**: Shared NextRUSH+ / Next SEKAI LevelData — EntityBuilder pattern, #BPM_CHANGE, #TIMESCALE_GROUP, note archetypes (NormalTapNote, NormalHeadTapNote, NormalTailReleaseNote), SimLine generation
 - **Phase 5**: SCP packaging — engine resources (skins/effects/particles/repository), gzipped JSON resources, raw audio resources, PNG cover/background resources, levels list
 - **Phase 6**: Multi-difficulty — all valid mania charts per .osz, placeholder filtering (≤1 note), `--single-difficulty` flag, BGM/cover dedup
 - 4K/5K/6K all tested and verified
@@ -70,7 +71,8 @@ Functional goals:
 - Batch export modes implemented: one `.scp` per `.osz`, or multiple `.osz` merged into one `.scp`
 - Configurable hold tail style (`release` / `trace` / `none`) and gameplay background mode implemented
 - Optional Tinged Columns conversion implemented for GUI/CLI (`--tinged-columns`)
-- Optional LN start hidden tick guard implemented for GUI/CLI (`--guard-hidden-ticks`)
+- Target engine selection implemented for GUI/CLI (`--target-engine`)
+- Both-target packaging/schema tests, full `dan.osz` conversions, and Windows executable startup smoke check passed (2026-10-22)
 - Effective osu!mania SV resets at red TimingPoints are handled for `timeScaleGroup`
 
 ### ❌ Pending
@@ -78,7 +80,7 @@ Functional goals:
 - Original osu background as gameplay background is generated but still needs real Sonolus import validation
 - No hitsound preservation
 - 7K not implemented (only 4K/5K/6K for now)
-- Packaged Windows executable not yet smoke-tested
+- Next SEKAI still needs real-client import, play, watch, preview, and result-screen validation
 
 ## Critical Conventions
 
@@ -112,8 +114,15 @@ When enabled, convert objects on these 1-based mania lanes to USC `critical: tru
 
 This applies to both tap `single` objects and hold `slide` objects. Keep it disabled by default.
 
-### LN Start Hidden Tick Guard
-NextRUSH+ slide conversion normally generates `TransientHiddenTickNote` every `0.5` beat between slide endpoints. LN start hidden tick guard keeps that spacing but skips generated hidden ticks within `0.25` beat after a slide starts. Keep it disabled by default and use it for charts that show immediate `-40hp` misses near LN starts.
+### Hidden Ticks
+Generate `TransientHiddenTickNote` on the normal `0.5`-beat grid strictly between slide endpoints. Do not apply an additional exclusion window after the head.
+
+### Target Engines
+`src/engines.py` defines the supported profiles:
+- `nextrush`: `engine.scp`, engine item `NextRUSH_P`, level prefix `om2usc` (existing identifiers preserved).
+- `next-sekai`: `engine_next_sekai.scp`, engine item `coconut-next-sekai-1`, level prefix `om2usc-next-sekai`.
+
+The internal USC remains the NextRUSH+ dialect. Next SEKAI's own USC input schema is different; do not pass the internal JSON to its USC converter. Both bundled engines accept the native LevelData subset produced by `src/nextrush_leveldata.py`. Validate generated archetypes and fields against both runtimes when changing this shared converter. Reject resource packs whose engine item does not match the selected profile.
 
 ### Dependency Policy
 The stdlib-only restriction is removed. Prefer the best implementation result over avoiding dependencies.
@@ -138,14 +147,24 @@ Follow Sonolus resource types, not a blanket ".scp = gzip" rule:
 - Archive resources are raw ZIP bytes. Do not gzip effect audio archives.
 - `LevelItem.version` is `1`; `BackgroundItem.version` is `2`.
 - `sonolus/levels/<name>` is a level details document and must include `item`, `description`, `actions`, `hasCommunity`, `leaderboards`, and `sections`.
+- Generated backgrounds must not inherit `source` or `authorUser` from engine defaults. They are local items, not resources hosted by the upstream update server.
 
 ### Updating NextRUSH+ Engine Resources
 `engine.scp` is the bundled NextRUSH+ resource pack used when creating output packages. To update it:
 1. Check upstream <https://github.com/UntitledCharts/sonolus-next-rush-engine> for the latest tag and GitHub Actions `next-rush-engine` artifact, or build upstream locally with `sonolus-py build`.
 2. Repack the generated `build/dist/engine/{EngineConfiguration,EnginePlayData,EngineWatchData,EnginePreviewData,EngineTutorialData,EngineRom}` blobs into the repository-root `engine.scp`.
 3. Confirm the package still contains `sonolus/engines/NextRUSH_P`; otherwise update `src/scp_writer.py` before converting.
-4. Current bundled engine runtime is built from upstream `v2.0.1`.
+4. Current bundled engine runtime is built from upstream `v2.16.3`, commit `6d6dd372985cd35154282129b4031adc9874b615`, using Python 3.14 and upstream locked dependencies. The app itself remains on Python 3.13.
 5. Run a smoke conversion, for example `python osu_mania_to_scp.py testdata/dan.osz --engine engine.scp --out .tmp/engine-check.scp --single-difficulty "~ 10th ~ (Marathon)"`, then inspect/import the result.
+
+### Updating Next SEKAI Resources
+The bundled pack is a snapshot of the official server <https://coconut.sonolus.com/next-sekai>, fetched on 2026-10-22. Its playData SHA-1 is `2e1ea0ccef1454d610729a35a13fa78c0c06f389`; the deployed runtime's source commit is not advertised and must not be inferred from repository HEAD.
+
+```bash
+python scripts/fetch_engine_pack.py --server https://coconut.sonolus.com/next-sekai --engine-name coconut-next-sekai-1 --out engine_next_sekai.scp
+```
+
+This fetches the engine and its default skin/background/effect/particle, verifies every downloaded SHA-1, and localizes repository URLs. Source: <https://github.com/Next-SEKAI/sonolus-next-sekai-engine>. Run both-target tests after updating either pack.
 
 ### Offset Sign
 Use the first red TimingPoint as USC beat 0, and set `usc.offset = first_red_time_ms / 1000`. This places beat 0 at the original `.osu` audio timestamp after converting HitObject times to beats.
@@ -177,13 +196,16 @@ python osu_mania_to_scp.py testdata/dan.osz --engine engine.scp --out output.scp
 
 # Merge multiple .osz files
 python osu_mania_to_scp.py first.osz second.osz --engine engine.scp \
-    --out merged.scp --merge --tail-mode none --background-mode original --tinged-columns --guard-hidden-ticks
+    --out merged.scp --merge --tail-mode none --background-mode original --tinged-columns
+
+# Next SEKAI with its bundled resources
+python osu_mania_to_scp.py testdata/dan.osz --target-engine next-sekai --out next-sekai.scp
 ```
 
 ### GUI Usage
 ```bash
-python -m pip install -r requirements.txt
-python om2usc_gui.py
+uv sync
+uv run python om2usc_gui.py
 
 # Optional Windows executable build
 powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
@@ -192,3 +214,6 @@ powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
 ### Test Data
 - `testdata/dan.osz` — input beatmap pack
 - `engine.scp` — NextRUSH+ resource pack
+- `engine_next_sekai.scp` — Next SEKAI resource pack
+
+Run automated checks with `uv run python -m unittest discover -s tests -v`. These validate packaging and runtime schemas; they do not replace Sonolus client gameplay tests.

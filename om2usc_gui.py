@@ -12,7 +12,7 @@ def main() -> int:
     except ModuleNotFoundError as exc:
         if exc.name == "PySide6":
             print("PySide6 is required for the GUI. Install dependencies with:")
-            print("  python -m pip install -r requirements.txt")
+            print("  uv sync")
             return 1
         raise
     return run_gui()

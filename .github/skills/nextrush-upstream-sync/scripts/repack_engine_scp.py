@@ -4,10 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
-import os
-import shutil
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -28,6 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--engine-scp", default="engine.scp", type=Path)
     parser.add_argument("--dist-engine", required=True, type=Path)
     parser.add_argument("--upstream-version", required=True)
+    parser.add_argument("--upstream-commit")
     parser.add_argument("--engine-name", default="NextRUSH_P")
     parser.add_argument(
         "--upstream-url",
@@ -74,17 +74,6 @@ def update_item_in_list(items: list[Any], engine_name: str, engine_item: dict[st
     ]
 
 
-def replace_file(src: Path, dst: Path) -> None:
-    try:
-        src.replace(dst)
-    except PermissionError:
-        shutil.copyfile(src, dst)
-        try:
-            src.unlink()
-        except PermissionError:
-            pass
-
-
 def main() -> int:
     args = parse_args()
     engine_scp = args.engine_scp
@@ -110,6 +99,9 @@ def main() -> int:
     new_blobs: dict[str, bytes] = {}
     for field, filename in ENGINE_BLOBS.items():
         data = (dist_engine / filename).read_bytes()
+        decoded = gzip.decompress(data)
+        if field != "rom":
+            json.loads(decoded)
         digest = hash_bytes(data)
         new_blobs[digest] = data
         engine_item[field] = {
@@ -120,8 +112,11 @@ def main() -> int:
     engine_item["description"] = (
         f"\nNext RUSH+ Sonolus engine.\n\n{args.upstream_url}\n{args.upstream_version}"
     )
+    if args.upstream_commit:
+        engine_item["description"] += f"\nCommit: {args.upstream_commit}"
 
     engine_doc["item"] = engine_item
+    engine_doc["description"] = engine_item["description"]
     entries[engine_doc_path] = json_dump(engine_doc)
 
     engines_list = json_load(entries, "sonolus/engines/list")
@@ -145,6 +140,7 @@ def main() -> int:
     if "sonolus/package" in entries:
         package_doc = json_load(entries, "sonolus/package")
         package_doc["title"] = "om2pjsk-usc Engine Pack"
+        package_doc["shouldUpdate"] = False
         entries["sonolus/package"] = json_dump(package_doc)
 
     if "sonolus/info" in entries:
@@ -191,7 +187,7 @@ def main() -> int:
             if hash_bytes(zf.read(repo_path)) != digest:
                 raise SystemExit(f"Hash mismatch for {field}: {digest}")
 
-    replace_file(temp_path, engine_scp)
+    temp_path.replace(engine_scp)
     print(f"Updated {engine_scp} from {dist_engine}")
     for field in ENGINE_BLOBS:
         print(f"{field}: {engine_item[field]['hash']}")

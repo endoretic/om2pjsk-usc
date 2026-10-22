@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 
 from osu_mania_to_scp import filter_valid_charts, parse_all_charts, read_osz
 from src.osu_to_usc import TAIL_MODES
+from src.engines import DEFAULT_ENGINE, ENGINE_PROFILES, default_engine_path, get_engine_profile
 from src.scp_writer import build_merged_scp, build_scp
 
 
@@ -91,7 +92,7 @@ class ConversionWorker(QRunnable):
         tail_mode: str,
         background_mode: str,
         tinged_columns: bool,
-        guard_hidden_ticks: bool,
+        target_engine: str,
     ) -> None:
         super().__init__()
         self.entries = entries
@@ -101,7 +102,7 @@ class ConversionWorker(QRunnable):
         self.tail_mode = tail_mode
         self.background_mode = background_mode
         self.tinged_columns = tinged_columns
-        self.guard_hidden_ticks = guard_hidden_ticks
+        self.target_engine = target_engine
         self.signals = WorkerSignals()
 
     @Slot()
@@ -116,7 +117,7 @@ class ConversionWorker(QRunnable):
                     tail_mode=self.tail_mode,
                     background_mode=self.background_mode,
                     tinged_columns=self.tinged_columns,
-                    guard_hidden_ticks=self.guard_hidden_ticks,
+                    target_engine=self.target_engine,
                     progress_callback=self.signals.progress.emit,
                 )
                 if status != 0:
@@ -146,7 +147,7 @@ class ConversionWorker(QRunnable):
                         tail_mode=self.tail_mode,
                         background_mode=self.background_mode,
                         tinged_columns=self.tinged_columns,
-                        guard_hidden_ticks=self.guard_hidden_ticks,
+                        target_engine=self.target_engine,
                         progress_callback=report,
                     )
                     if status != 0:
@@ -357,10 +358,12 @@ class Om2UscWindow(QMainWindow):
         self.loading_paths: set[str] = set()
         self.pending_items: Dict[str, QListWidgetItem] = {}
         self.thread_pool = QThreadPool.globalInstance()
+        self.engine_paths = {key: str(default_engine_path(key)) for key in ENGINE_PROFILES}
+        self._current_target = DEFAULT_ENGINE
 
         self.setWindowTitle("om2usc")
-        self.resize(1120, 820)
-        self.setMinimumSize(920, 720)
+        self.resize(1120, 880)
+        self.setMinimumSize(920, 780)
         self.setFont(QFont("Segoe UI Variable", 10))
 
         self.background = BackgroundWidget()
@@ -443,25 +446,31 @@ class Om2UscWindow(QMainWindow):
         form.setVerticalSpacing(16)
         right_layout.addLayout(form)
 
-        default_engine = default_engine_path()
-        self.engine_edit = QLineEdit(str(default_engine) if default_engine else "")
+        self.target_engine_combo = QComboBox()
+        self.target_engine_combo.setView(QListView())
+        for key, profile in ENGINE_PROFILES.items():
+            self.target_engine_combo.addItem(profile.title, key)
+        form.addWidget(QLabel("Target engine"), 0, 0)
+        form.addWidget(self.target_engine_combo, 0, 1, 1, 2)
+
+        self.engine_edit = QLineEdit(self.engine_paths[DEFAULT_ENGINE])
         self.engine_button = QPushButton("Browse")
-        form.addWidget(QLabel("Engine"), 0, 0)
-        form.addWidget(self.engine_edit, 0, 1)
-        form.addWidget(self.engine_button, 0, 2)
+        form.addWidget(QLabel("Resource pack"), 1, 0)
+        form.addWidget(self.engine_edit, 1, 1)
+        form.addWidget(self.engine_button, 1, 2)
 
         self.export_combo = QComboBox()
         self.export_combo.setView(QListView())
         self.export_combo.addItem("One SCP per OSZ", "one-to-one")
         self.export_combo.addItem("Merge into one SCP", "merge")
-        form.addWidget(QLabel("Export"), 1, 0)
-        form.addWidget(self.export_combo, 1, 1, 1, 2)
+        form.addWidget(QLabel("Export"), 2, 0)
+        form.addWidget(self.export_combo, 2, 1, 1, 2)
 
         self.output_edit = QLineEdit()
         self.output_button = QPushButton("Browse")
-        form.addWidget(QLabel("Output"), 2, 0)
-        form.addWidget(self.output_edit, 2, 1)
-        form.addWidget(self.output_button, 2, 2)
+        form.addWidget(QLabel("Output"), 3, 0)
+        form.addWidget(self.output_edit, 3, 1)
+        form.addWidget(self.output_button, 3, 2)
 
         self.tail_combo = QComboBox()
         self.tail_combo.setView(QListView())
@@ -473,35 +482,29 @@ class Om2UscWindow(QMainWindow):
         for mode in ["release", "trace", "none"]:
             if mode in TAIL_MODES:
                 self.tail_combo.addItem(tail_labels[mode], mode)
-        form.addWidget(QLabel("Hold tail"), 3, 0)
-        form.addWidget(self.tail_combo, 3, 1, 1, 2)
+        form.addWidget(QLabel("Hold tail"), 4, 0)
+        form.addWidget(self.tail_combo, 4, 1, 1, 2)
 
         self.background_combo = QComboBox()
         self.background_combo.setView(QListView())
         self.background_combo.addItem("NextRUSH+ default", "default")
         self.background_combo.addItem("Original osu background", "original")
-        form.addWidget(QLabel("Gameplay BG"), 4, 0)
-        form.addWidget(self.background_combo, 4, 1, 1, 2)
+        form.addWidget(QLabel("Gameplay BG"), 5, 0)
+        form.addWidget(self.background_combo, 5, 1, 1, 2)
 
         self.tinged_columns_checkbox = QCheckBox("Tinged Columns")
-        self.guard_hidden_ticks_checkbox = QCheckBox("Guard LN start ticks")
         self.option_tip = HoverTip(self)
         self.option_tip.bind(
             self.tinged_columns_checkbox,
             "Marks configured columns as gold critical notes. 4K uses lanes 1/4, 5K uses lanes 2/4, and 6K uses lanes 2/5.",
         )
-        self.option_tip.bind(
-            self.guard_hidden_ticks_checkbox,
-            "Skips hidden ticks generated within 0.25 beat after an LN starts. Keeps the normal 0.5 beat tick spacing afterward.",
-        )
         note_options = QHBoxLayout()
         note_options.setContentsMargins(0, 0, 0, 0)
         note_options.setSpacing(18)
         note_options.addWidget(self.tinged_columns_checkbox)
-        note_options.addWidget(self.guard_hidden_ticks_checkbox)
         note_options.addStretch(1)
-        form.addWidget(QLabel("Options"), 5, 0)
-        form.addLayout(note_options, 5, 1, 1, 2)
+        form.addWidget(QLabel("Note color"), 6, 0)
+        form.addLayout(note_options, 6, 1, 1, 2)
 
         self.convert_button = QPushButton("Convert")
         self.convert_button.setObjectName("PrimaryButton")
@@ -518,16 +521,18 @@ class Om2UscWindow(QMainWindow):
         self.log = QTextEdit()
         self.log.setObjectName("StatusLog")
         self.log.setReadOnly(True)
-        self.log.setFixedHeight(132)
+        self.log.setMinimumHeight(48)
+        self.log.setMaximumHeight(132)
         self.log.viewport().setAutoFillBackground(False)
         right_layout.addWidget(log_label)
-        right_layout.addWidget(self.log)
+        right_layout.addWidget(self.log, 1)
 
         self.add_button.clicked.connect(self.add_osz_files)
         self.clear_button.clicked.connect(self.clear_files)
         self.file_list.filesDropped.connect(self.add_osz_paths)
         self.file_list.dragStateChanged.connect(self.set_drop_animation)
         self.engine_button.clicked.connect(self.choose_engine)
+        self.target_engine_combo.currentIndexChanged.connect(self._sync_target_engine)
         self.output_button.clicked.connect(self.choose_output)
         self.export_combo.currentIndexChanged.connect(self._sync_output_hint)
         self.convert_button.clicked.connect(self.start_conversion)
@@ -784,12 +789,19 @@ class Om2UscWindow(QMainWindow):
     def choose_engine(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Choose engine.scp",
+            f"Choose {get_engine_profile(self._current_target).title} resource pack",
             self.engine_edit.text() or "",
             "SCP packages (*.scp);;All files (*.*)",
         )
         if path:
             self.engine_edit.setText(path)
+
+    def _sync_target_engine(self) -> None:
+        self.engine_paths[self._current_target] = self.engine_edit.text()
+        self._current_target = self.target_engine_combo.currentData()
+        self.engine_edit.setText(self.engine_paths[self._current_target])
+        profile = get_engine_profile(self._current_target)
+        self.background_combo.setItemText(0, f"{profile.title} default")
 
     def choose_output(self) -> None:
         if self.export_combo.currentData() == "merge":
@@ -831,12 +843,12 @@ class Om2UscWindow(QMainWindow):
             return
         engine_path = self.engine_edit.text().strip()
         output_path = self.output_edit.text().strip()
-        if not engine_path or not Path(engine_path).exists():
+        if not engine_path or not Path(engine_path).is_file():
             show_message(
                 self,
                 QMessageBox.Icon.Warning,
                 "Missing engine",
-                "Choose a valid engine.scp file.",
+                f"Choose a valid {get_engine_profile(self._current_target).title} resource pack.",
             )
             return
         if not output_path:
@@ -855,7 +867,7 @@ class Om2UscWindow(QMainWindow):
 
         self._set_controls_enabled(False)
         self.progress.setValue(0)
-        self.log_message("Starting conversion.")
+        self.log_message(f"Starting conversion for {get_engine_profile(self._current_target).title}.")
 
         worker = ConversionWorker(
             entries=list(self.entries),
@@ -865,7 +877,7 @@ class Om2UscWindow(QMainWindow):
             tail_mode=self.tail_combo.currentData(),
             background_mode=self.background_combo.currentData(),
             tinged_columns=self.tinged_columns_checkbox.isChecked(),
-            guard_hidden_ticks=self.guard_hidden_ticks_checkbox.isChecked(),
+            target_engine=self._current_target,
         )
         worker.signals.progress.connect(self.on_progress)
         worker.signals.message.connect(self.log_message)
@@ -877,13 +889,15 @@ class Om2UscWindow(QMainWindow):
             self.add_button,
             self.clear_button,
             self.engine_button,
+            self.engine_edit,
+            self.target_engine_combo,
             self.output_button,
+            self.output_edit,
             self.convert_button,
             self.export_combo,
             self.tail_combo,
             self.background_combo,
             self.tinged_columns_checkbox,
-            self.guard_hidden_ticks_checkbox,
             self.file_list,
         ):
             widget.setEnabled(enabled)
@@ -972,18 +986,6 @@ def _unique_output_path(path: Path, used: set[Path]) -> Path:
         index += 1
     used.add(candidate)
     return candidate
-
-
-def default_engine_path() -> Optional[Path]:
-    candidates = [
-        Path("engine.scp"),
-        Path(getattr(sys, "_MEIPASS", "")) / "engine.scp",
-        Path(sys.argv[0]).resolve().parent / "engine.scp",
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate.resolve()
-    return None
 
 
 def app_icon_path() -> Optional[Path]:

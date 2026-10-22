@@ -1,4 +1,4 @@
-"""USC JSON -> NextRUSH+ LevelData converter.
+"""Project Sekai USC -> shared NextRUSH+ / Next SEKAI LevelData converter.
 
 Ports the NextRUSH+ uscToLevelData() logic to Python for the subset this
 project emits: bpm, timeScaleGroup, single, and slide.
@@ -60,13 +60,10 @@ def usc_to_leveldata(
     usc: Dict[str, Any],
     offset: float = 0.0,
     hidden_tick_interval: float = 0.5,
-    hidden_tick_start_guard: float = 0.0,
 ) -> Dict[str, Any]:
-    """Convert a USC dict to NextRUSH+ LevelData."""
+    """Convert the project's USC dialect to either supported engine's LevelData."""
     if hidden_tick_interval <= 0:
         raise ValueError("hidden_tick_interval must be positive")
-    if hidden_tick_start_guard < 0:
-        raise ValueError("hidden_tick_start_guard must be non-negative")
 
     usc_offset = float(usc.get("offset", 0.0))
     objects: List[Dict[str, Any]] = usc.get("objects", [])
@@ -177,9 +174,6 @@ def usc_to_leveldata(
         step_size = max(1, len(connections) - 1)
         start_beat = float(connections[0].get("beat", 0))
         next_hidden_tick_beat = math.floor(start_beat / hidden_tick_interval + 1) * hidden_tick_interval
-        min_hidden_tick_beat = start_beat + hidden_tick_start_guard
-        while next_hidden_tick_beat + _FLOAT_TOLERANCE < min_hidden_tick_beat:
-            next_hidden_tick_beat += hidden_tick_interval
 
         for step_idx, conn in enumerate(connections):
             conn_type = conn.get("type", "")
