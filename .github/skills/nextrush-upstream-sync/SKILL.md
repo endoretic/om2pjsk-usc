@@ -21,7 +21,7 @@ In scope:
 
 Out of scope:
 - Changing osu!mania parsing or lane mapping unless upstream USC semantics require it.
-- Replacing skin/background/effect/particle resources unless the user explicitly asks.
+- Unrelated skin/background/effect/particle replacements. A demonstrated runtime/skin incompatibility must be fixed as part of the sync or bug fix.
 - Treating release notes as authoritative without checking source diffs.
 
 ## Upstream Check
@@ -65,7 +65,7 @@ Rules:
 
 ## Engine Runtime Sync
 
-`engine.scp` is a complete Sonolus package. Preserve its bundled default skin, background, effect, and particle resources unless the user asks to replace them.
+`engine.scp` is a complete Sonolus package. Preserve compatible bundled default resources, but check skin compatibility against the selected runtime before carrying an old skin forward. Matching item names or valid SHA-1 hashes do not prove compatibility: sprite names, number groups, and transforms can change without an item rename.
 
 Upstream release pages may have no direct `.scp` asset. Prefer these sources, in order:
 1. GitHub Actions `next-rush-engine` artifact matching the latest tag SHA, if accessible.
@@ -112,8 +112,28 @@ python .github/skills/nextrush-upstream-sync/scripts/repack_engine_scp.py \
 The script:
 - Replaces only engine runtime SRLs: configuration, playData, watchData, previewData, tutorialData, and rom.
 - Updates `sonolus/engines/NextRUSH_P`, `sonolus/engines/list`, and `sonolus/engines/info`.
-- Preserves non-engine resources.
+- Preserves non-engine resources unless `--skin-scp` explicitly requests the same default skin from another pack.
 - Validates that every engine runtime hash points to an existing `sonolus/repository/<sha1>` blob and matches the blob bytes.
+
+### Default Skin Compatibility
+
+The v2.16.3 runtime expects `Judge Perfect`/`Judge Great` and other `Judge ...` sprites, plus `UI Number 0` through `17`. The legacy bundled skin used unprefixed judgment names, only 12 UI number sprites, and extra Combo label transforms (about 2.67x width). Do not reuse that skin with the new runtime.
+
+The corrected `NR-V3-S1-EN` skin was fetched from `https://untitledcharts.com` on 2026-10-22: data SHA-1 `0b4aec47e0efb34c745b45f752a52efd406de5ac`, texture SHA-1 `60c73d46ffe3568c2b524bd8b89f0c870819a078`.
+
+To refresh only that skin while retaining a pinned engine build:
+
+```bash
+python scripts/fetch_engine_pack.py --server https://untitledcharts.com --engine-name NextRUSH_P --out .tmp/nextrush-online.scp
+python .github/skills/nextrush-upstream-sync/scripts/repack_engine_scp.py \
+  --engine-scp engine.scp --dist-engine .tmp/nr-upstream-history/build/dist/engine \
+  --upstream-version v2.16.3 --upstream-commit 6d6dd372985cd35154282129b4031adc9874b615 \
+  --skin-scp .tmp/nextrush-online.scp
+```
+
+`--skin-scp` verifies the same skin name/source and its resource hashes, updates embedded and standalone skin references, and removes unreferenced old skin blobs. It does not import the downloaded engine runtime. Compare all six runtime hashes before and after a skin-only repair.
+
+Do not overwrite `engine.scp` with the online snapshot blindly. During this fix the official server advertised v2.12.5, older than our pinned v2.16.3; a client-side update could replace both skin and engine. A successful client update alone does not isolate which resource fixed a visual problem.
 
 ## Documentation Updates
 
@@ -139,3 +159,5 @@ python -m unittest discover -s tests -v
 ```
 
 Also smoke-test `--target-engine next-sekai` after shared converter changes. Distinguish these local checks from real Sonolus import/gameplay validation.
+
+For skin changes, import a newly generated package without updating it online first and verify judgment text, Combo, score/life bars, and pause/skip controls in the client. Offline sprite-contract tests cannot prove the rendered layout is correct on a device.

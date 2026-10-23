@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from math import floor
 from typing import Any, Dict, List
 
 from .osu_parser import OsuChart, TimingPoint
@@ -29,6 +30,8 @@ TINGED_COLUMNS_BY_KEY = {
 }
 
 _FLOAT_TOLERANCE = 1e-6
+NOTE_SNAP_TOLERANCE_MS = 1.0
+NOTE_SNAP_DIVISIONS = (1, 2, 3, 4, 6, 8, 12, 16)
 
 
 def mania_column_to_usc_lane_size(key_count: int, col: int) -> tuple[float, float]:
@@ -104,9 +107,54 @@ def time_ms_to_beat(time_ms: float, segments: List[BpmSegment]) -> float:
     return seg.beat_at_start + (time_ms - seg.start_ms) / seg.beat_length_ms
 
 
+def beat_to_time_ms(beat: float, segments: List[BpmSegment]) -> float:
+    """Convert a USC beat back to source audio time, including BPM changes."""
+    if not segments:
+        return beat * 500.0
+    seg = segments[0]
+    for s in segments:
+        if s.beat_at_start <= beat:
+            seg = s
+        else:
+            break
+    return seg.start_ms + (beat - seg.beat_at_start) * seg.beat_length_ms
+
+
 def note_time_ms_to_beat(time_ms: float, segments: List[BpmSegment]) -> float:
-    """Convert note time to USC beat without emitting negative note beats."""
-    return max(0.0, time_ms_to_beat(time_ms, segments))
+    """Snap notes to common beat subdivisions only within 1 ms of source time."""
+    beat = time_ms_to_beat(time_ms, segments)
+    candidates = (
+        (floor(beat * division) + step) / division
+        for division in NOTE_SNAP_DIVISIONS
+        for step in (0, 1)
+    )
+    nearest = min(candidates, key=lambda value: abs(beat_to_time_ms(value, segments) - time_ms))
+    if abs(beat_to_time_ms(nearest, segments) - time_ms) <= NOTE_SNAP_TOLERANCE_MS + _FLOAT_TOLERANCE:
+        beat = nearest
+    return max(0.0, beat)
+
+
+def _build_note_beats(chart: OsuChart, segments: List[BpmSegment]) -> Dict[int, float]:
+    times = {ho.time for ho in chart.hit_objects}
+    times.update(ho.end_time for ho in chart.hit_objects if ho.is_hold and ho.end_time is not None)
+    ordered_times = sorted(times)
+    original = {t: max(0.0, time_ms_to_beat(t, segments)) for t in ordered_times}
+    snapped = {t: note_time_ms_to_beat(t, segments) for t in ordered_times}
+
+    # Share snaps across chords and undo collisions, including LN head/tail pairs.
+    # A restored timestamp can conflict with a neighbor, so repeat until stable.
+    while True:
+        restore = set()
+        for earlier, later in zip(ordered_times, ordered_times[1:]):
+            if original[earlier] < original[later] and snapped[earlier] >= snapped[later]:
+                restore.update((earlier, later))
+        changed = False
+        for t in restore:
+            if snapped[t] != original[t]:
+                snapped[t] = original[t]
+                changed = True
+        if not changed:
+            return snapped
 
 
 def _bpm_at_time(time_ms: float, segments: List[BpmSegment]) -> float:
@@ -227,11 +275,12 @@ class USCBuilder:
     def add_notes(self) -> None:
         """Convert HitObjects to USC single/slide objects."""
         key_count = self.chart.key_count
+        note_beats = _build_note_beats(self.chart, self.bpm_segments)
 
         for ho in self.chart.hit_objects:
             col = ho.lane(key_count)
             lane, size = mania_column_to_usc_lane_size(key_count, col)
-            beat = note_time_ms_to_beat(ho.time, self.bpm_segments)
+            beat = note_beats[ho.time]
             critical = self.tinged_columns and is_tinged_column(key_count, col)
 
             if not ho.is_hold:
@@ -247,7 +296,7 @@ class USCBuilder:
                 })
             else:
                 # Hold → slide
-                end_beat = max(beat, note_time_ms_to_beat(ho.end_time, self.bpm_segments))
+                end_beat = max(beat, note_beats[ho.end_time])
                 tail_connection = {
                     "type": "end",
                     "beat": end_beat,
