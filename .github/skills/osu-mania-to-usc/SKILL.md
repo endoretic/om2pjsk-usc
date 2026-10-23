@@ -95,6 +95,12 @@ Every TimingPoint ends the previous section. A red TimingPoint with no same-time
 
 Use tolerance comparisons for TimingPoint times, for example `abs(a - b) < 1e-6`; never rely on exact float equality.
 
+### Note Grid Snapping
+
+Automatically snap tap times and both hold endpoints to the nearest global USC beat subdivision, using 1, 2, 3, 4, 6, 8, 12, or 16 divisions per beat. Accept a snap only if it moves the source audio timestamp by at most 1 ms; compute that distance with the full BPM-segment model, not a fixed beat tolerance. Keep farther off-grid notes unchanged.
+
+All notes at the same source time must stay simultaneous. Revert snaps that merge or reverse distinct event times, including collapsing a positive-duration hold. Preserve the existing nonnegative-beat clamp. Do not snap timing/SV events or alter the audio offset. This is shared by GUI, CLI, USC dumps, and both target engines; it is not a hidden-tick exclusion window or an engine judgment change.
+
 ### HitObjects
 
 - `type & 1 != 0`: tap -> USC `single`.

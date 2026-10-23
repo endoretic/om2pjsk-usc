@@ -474,6 +474,7 @@ def build_merged_scp(
     _copy_engine_resources(out, engine_entries)
 
     level_items: List[Dict[str, Any]] = []
+    skipped_audio = 0
     used_level_names: Set[str] = set()
     used_background_names: Set[str] = set()
 
@@ -492,6 +493,17 @@ def build_merged_scp(
             f"Converting {Path(source.osz_path).name}: {chart.version}",
         )
 
+        bgm_data = _find_asset(source.entries, chart.audio_filename)
+        if not bgm_data:
+            skipped_audio += 1
+            message = (
+                f"Skipped {chart.version} ({Path(source.osz_path).name}): "
+                f"BGM '{chart.audio_filename}' is missing or empty."
+            )
+            print(f"    WARNING: {message}", file=sys.stderr)
+            _emit_progress(progress_callback, index, len(chart_sources), message)
+            continue
+
         usc = osu_to_usc(
             chart,
             tail_mode=tail_mode,
@@ -504,13 +516,8 @@ def build_merged_scp(
         ld_blob, ld_hash = leveldata_blob(leveldata)
         _put_repository_blob(out, ld_blob)
 
-        bgm_hash: Optional[str] = None
-        bgm_data = _find_asset(source.entries, chart.audio_filename)
-        if bgm_data is None:
-            print(f"    WARNING: BGM '{chart.audio_filename}' not found in .osz", file=sys.stderr)
-        else:
-            # Sonolus audio repository blobs are raw media files; only LevelData is gzipped.
-            bgm_hash = _put_repository_blob(out, bgm_data)
+        # Sonolus audio repository blobs are raw media files; only LevelData is gzipped.
+        bgm_hash = _put_repository_blob(out, bgm_data)
 
         cover_hash: Optional[str] = None
         background_image_hash: Optional[str] = None
@@ -591,6 +598,10 @@ def build_merged_scp(
             f"Finished {chart.version}",
         )
 
+    if not level_items:
+        print("No exportable charts: all selected charts have missing or empty BGM.", file=sys.stderr)
+        return 1
+
     resolved_package_name = package_name or _package_name_from_paths(paths)
     package_title = f"{profile.level_prefix}-{_safe_slug(resolved_package_name, fallback='package')}"
     out["sonolus/levels/list"] = _json_dump({"pageCount": 1, "items": level_items})
@@ -609,8 +620,11 @@ def build_merged_scp(
     _write_zip(output_path, out)
     print(f"\nWrote: {output_path}")
     print(f"  Levels: {len(level_items)}")
+    if skipped_audio:
+        print(f"  Skipped (missing or empty BGM): {skipped_audio}")
     print(f"  Total entries: {len(out)}")
-    _emit_progress(progress_callback, len(chart_sources), len(chart_sources), f"Wrote {output_path}")
+    summary = f"Wrote {output_path} ({len(level_items)} levels, {skipped_audio} skipped)"
+    _emit_progress(progress_callback, len(chart_sources), len(chart_sources), summary)
     return 0
 
 

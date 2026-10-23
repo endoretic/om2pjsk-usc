@@ -84,6 +84,28 @@ class EngineTargetTests(unittest.TestCase):
         self.assertIn("v2.16.3", description)
         self.assertIn("6d6dd372985cd35154282129b4031adc9874b615", description)
 
+    def test_nextrush_default_skin_matches_current_ui_contract(self):
+        with zipfile.ZipFile(default_engine_path("nextrush")) as archive:
+            skin = self.engines["nextrush"]["skin"]
+            data = json.loads(gzip.decompress(archive.read(skin["data"]["url"].lstrip("/"))))
+        sprites = {sprite["name"]: sprite for sprite in data["sprites"]}
+        # v2.16.3 uses the renamed judgments and the expanded UI number group.
+        required = {f"Judge {name}" for name in (
+            "Perfect", "Great", "Good", "Bad", "Miss", "Auto",
+            "Fast Warning", "Late Warning", "Flick Warning",
+        )}
+        required.update(f"UI Number {number}" for number in range(18))
+        self.assertFalse(required - sprites.keys(), f"Outdated default skin: {sorted(required - sprites.keys())}")
+
+        # The old skin applied an extra transform to labels already sized by the engine.
+        corners = {"x1": -1, "y1": -1, "x2": -1, "y2": 1,
+                   "x3": 1, "y3": 1, "x4": 1, "y4": -1}
+        for name in ("Combo Label", "AP Combo Label", "Combo Label Glow"):
+            with self.subTest(sprite=name):
+                for coordinate, weights in sprites[name]["transform"].items():
+                    actual = sum(weight * corners[key] for key, weight in weights.items())
+                    self.assertAlmostEqual(actual, corners[coordinate])
+
     def test_profiles_resolve_from_bundle_root(self):
         with patch.object(sys, "_MEIPASS", str(Path.cwd() / "fake-bundle"), create=True):
             for target, profile in ENGINE_PROFILES.items():

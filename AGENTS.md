@@ -74,10 +74,10 @@ Functional goals:
 - Target engine selection implemented for GUI/CLI (`--target-engine`)
 - Both-target packaging/schema tests, full `dan.osz` conversions, and Windows executable startup smoke check passed (2026-10-22)
 - Effective osu!mania SV resets at red TimingPoints are handled for `timeScaleGroup`
+- Automatic 1 ms note-grid snapping is shared by both targets. The NextRUSH+ Tsukuyomi ni Naru retest with original background was confirmed working by the user (2026-10-23); this is not exhaustive validation of other charts or engine modes.
 
 ### ❌ Pending
 - Complex SV charts still need broader real-client visual validation
-- Original osu background as gameplay background is generated but still needs real Sonolus import validation
 - No hitsound preservation
 - 7K not implemented (only 4K/5K/6K for now)
 - Next SEKAI still needs real-client import, play, watch, preview, and result-screen validation
@@ -117,6 +117,11 @@ This applies to both tap `single` objects and hold `slide` objects. Keep it disa
 ### Hidden Ticks
 Generate `TransientHiddenTickNote` on the normal `0.5`-beat grid strictly between slide endpoints. Do not apply an additional exclusion window after the head.
 
+### Note Grid Snapping
+In osu -> USC conversion, automatically snap taps and hold endpoints to the nearest global USC beat grid with 1, 2, 3, 4, 6, 8, 12, or 16 divisions per beat, only when the source-audio-time change is at most 1 ms. Measure the distance through the BPM segments, including across a tempo change. Do not snap BPM/SV events or change the audio offset. Use the same result for NextRUSH+ and Next SEKAI.
+
+Keep simultaneous events together. Revert conflicting snaps if distinct event times would merge or reverse, including a hold collapsing to zero duration. This corrects millisecond quantization near a grid line; it does not remove genuinely close head/tick pairs on different grid lines.
+
 ### Target Engines
 `src/engines.py` defines the supported profiles:
 - `nextrush`: `engine.scp`, engine item `NextRUSH_P`, level prefix `om2usc` (existing identifiers preserved).
@@ -148,6 +153,8 @@ Follow Sonolus resource types, not a blanket ".scp = gzip" rule:
 - `LevelItem.version` is `1`; `BackgroundItem.version` is `2`.
 - `sonolus/levels/<name>` is a level details document and must include `item`, `description`, `actions`, `hasCommunity`, `leaderboards`, and `sections`.
 - Generated backgrounds must not inherit `source` or `authorUser` from engine defaults. They are local items, not resources hosted by the upstream update server.
+- Never export a level with missing or empty BGM. Skip it with a CLI/GUI progress warning; if every selected chart is skipped, fail without writing or overwriting an SCP.
+- osu video and storyboard events are ignored. Keep this behavior for both targets; current Sonolus backgrounds are static images, not video resources. Do not put MP4 bytes in an image SRL.
 
 ### Updating NextRUSH+ Engine Resources
 `engine.scp` is the bundled NextRUSH+ resource pack used when creating output packages. To update it:
@@ -156,6 +163,8 @@ Follow Sonolus resource types, not a blanket ".scp = gzip" rule:
 3. Confirm the package still contains `sonolus/engines/NextRUSH_P`; otherwise update `src/scp_writer.py` before converting.
 4. Current bundled engine runtime is built from upstream `v2.16.3`, commit `6d6dd372985cd35154282129b4031adc9874b615`, using Python 3.14 and upstream locked dependencies. The app itself remains on Python 3.13.
 5. Run a smoke conversion, for example `python osu_mania_to_scp.py testdata/dan.osz --engine engine.scp --out .tmp/engine-check.scp --single-difficulty "~ 10th ~ (Marathon)"`, then inspect/import the result.
+
+Check the default skin's sprite names and transforms when upgrading the runtime, not just its resource hashes. The legacy `NR-V3-S1-EN` skin is incompatible with the current UI contract. The bundled skin now uses official data SHA-1 `0b4aec47e0efb34c745b45f752a52efd406de5ac` and texture SHA-1 `60c73d46ffe3568c2b524bd8b89f0c870819a078` (2026-10-22). See the upstream-sync skill's `--skin-scp` procedure to refresh the same skin without importing the online engine. The online server can lag behind the pinned runtime; do not treat a client-side update as a guaranteed engine upgrade.
 
 ### Updating Next SEKAI Resources
 The bundled pack is a snapshot of the official server <https://coconut.sonolus.com/next-sekai>, fetched on 2026-10-22. Its playData SHA-1 is `2e1ea0ccef1454d610729a35a13fa78c0c06f389`; the deployed runtime's source commit is not advertised and must not be inferred from repository HEAD.

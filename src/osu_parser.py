@@ -242,7 +242,7 @@ def _parse_hitobject(chart: OsuChart, line: str) -> None:
 
 
 def _parse_event(chart: OsuChart, line: str) -> None:
-    """Parse Events section for background image."""
+    """Read the static background only; ignore video and storyboard events."""
     # Background format: 0,0,"filename",0,0
     if line.startswith("0,0,"):
         # Extract filename between quotes

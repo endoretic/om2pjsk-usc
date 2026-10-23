@@ -25,7 +25,7 @@ wheels = [
 
 [[package]]
 name = "om2pjsk-usc"
-version = "1.2.0"
+version = "1.2.1"
 source = { virtual = "." }
 dependencies = [
     { name = "pillow" },

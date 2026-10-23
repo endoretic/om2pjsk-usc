@@ -30,6 +30,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--upstream-commit")
     parser.add_argument("--engine-name", default="NextRUSH_P")
     parser.add_argument(
+        "--skin-scp", type=Path,
+        help="Refresh the existing default skin from this pack without importing its engine runtime.",
+    )
+    parser.add_argument(
         "--upstream-url",
         default="https://github.com/UntitledCharts/sonolus-next-rush-engine",
     )
@@ -74,6 +78,45 @@ def update_item_in_list(items: list[Any], engine_name: str, engine_item: dict[st
     ]
 
 
+def refresh_default_skin(
+    entries: dict[str, bytes], engine_item: dict[str, Any], source: Path,
+) -> set[str]:
+    old_skin = engine_item["skin"]
+    name = old_skin["name"]
+    path = f"sonolus/skins/{name}"
+    source_entries = read_zip_entries(source)
+    skin_doc = json_load(source_entries, path)
+    skin = skin_doc["item"]
+    if skin.get("name") != name or skin.get("source") != old_skin.get("source"):
+        raise ValueError("Replacement skin must have the same name and source")
+
+    resources: dict[str, bytes] = {}
+    for field in ("thumbnail", "data", "texture"):
+        digest = skin[field]["hash"]
+        repo_path = f"sonolus/repository/{digest}"
+        data = source_entries[repo_path]
+        if hash_bytes(data) != digest:
+            raise ValueError(f"Skin {field} hash mismatch: {digest}")
+        if field == "data":
+            json.loads(gzip.decompress(data))
+        resources[repo_path] = data
+        skin[field] = {"hash": digest, "url": f"/{repo_path}"}
+
+    entries.update(resources)
+    entries[path] = json_dump(skin_doc)
+    for doc_path in ("sonolus/skins/list", "sonolus/skins/info"):
+        doc = json_load(entries, doc_path)
+        if doc_path.endswith("/list"):
+            doc["items"] = update_item_in_list(doc.get("items", []), name, skin)
+        else:
+            for section in doc.get("sections", []):
+                if section.get("itemType") == "skin":
+                    section["items"] = update_item_in_list(section.get("items", []), name, skin)
+        entries[doc_path] = json_dump(doc)
+    engine_item["skin"] = skin
+    return collect_hashes(old_skin)
+
+
 def main() -> int:
     args = parse_args()
     engine_scp = args.engine_scp
@@ -90,11 +133,13 @@ def main() -> int:
 
     engine_doc = json_load(entries, engine_doc_path)
     engine_item = engine_doc["item"]
-    old_runtime_hashes = {
+    old_resource_hashes = {
         engine_item[field]["hash"]
         for field in ENGINE_BLOBS
         if isinstance(engine_item.get(field), dict) and "hash" in engine_item[field]
     }
+    if args.skin_scp:
+        old_resource_hashes.update(refresh_default_skin(entries, engine_item, args.skin_scp))
 
     new_blobs: dict[str, bytes] = {}
     for field, filename in ENGINE_BLOBS.items():
@@ -160,9 +205,9 @@ def main() -> int:
                 pass
     referenced_hashes.update(new_blobs)
 
-    old_runtime_paths = {
+    obsolete_paths = {
         f"sonolus/repository/{digest}"
-        for digest in old_runtime_hashes
+        for digest in old_resource_hashes
         if digest not in referenced_hashes
     }
     new_runtime_paths = {f"sonolus/repository/{digest}" for digest in new_blobs}
@@ -170,7 +215,7 @@ def main() -> int:
     temp_path = engine_scp.with_suffix(engine_scp.suffix + ".new")
     with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for name in sorted(entries):
-            if name in old_runtime_paths or name in new_runtime_paths:
+            if name in obsolete_paths or name in new_runtime_paths:
                 continue
             zf.writestr(name, entries[name])
         for digest, data in sorted(new_blobs.items()):
@@ -179,13 +224,12 @@ def main() -> int:
     with zipfile.ZipFile(temp_path, "r") as zf:
         names = set(zf.namelist())
         item = json.loads(zf.read(engine_doc_path).decode("utf-8"))["item"]
-        for field in ENGINE_BLOBS:
-            digest = item[field]["hash"]
+        for digest in collect_hashes(item):
             repo_path = f"sonolus/repository/{digest}"
             if repo_path not in names:
-                raise SystemExit(f"Missing repository blob for {field}: {digest}")
+                raise SystemExit(f"Missing repository blob: {digest}")
             if hash_bytes(zf.read(repo_path)) != digest:
-                raise SystemExit(f"Hash mismatch for {field}: {digest}")
+                raise SystemExit(f"Hash mismatch: {digest}")
 
     temp_path.replace(engine_scp)
     print(f"Updated {engine_scp} from {dist_engine}")

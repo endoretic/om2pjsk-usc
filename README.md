@@ -13,6 +13,7 @@ The intermediate USC uses the Project Sekai / NextRUSH+ chart model, not generic
 - Converts valid Osu!Mania charts from `.osz` packages.
 - Supports 4K, 5K, and 6K charts.
 - Converts taps to USC `single` objects and holds to USC `slide` objects.
+- Automatically snaps note times within 1 ms of common beat subdivisions for both engines, preserving chords and note order.
 - Supports `release`, `trace`, and `none` hold tail styles.
 - Converts BPM segments and timing-based time scale groups.
 - Supports optional Tinged Columns critical-note conversion.
@@ -132,9 +133,12 @@ scripts/
 
 - Each target has its own bundled resource pack and distinct level identifiers, so both conversions can coexist in a Sonolus collection.
 - Generated backgrounds have no online update source, preventing collection updates from replacing them with an engine server's fallback image. Existing affected packages must be regenerated and reimported.
+- Upstream engines retain their official update sources for Sonolus collection updates. These follow the server's deployed version, not GitHub HEAD, and do not refresh the application's bundled snapshots. Compatible engine updates do not require reconversion; the 1 ms note correction is stored in LevelData.
 - 7K charts are not implemented.
 - Hitsounds are not preserved.
-- Complex SV charts and original-background gameplay mode need broader real-client validation.
+- Charts with missing or empty audio are skipped with a conversion warning; an all-skipped conversion fails without writing an SCP.
+- Only static gameplay backgrounds are supported. osu! video and storyboard events are ignored; neither is included in the exported SCP. Sonolus currently defines backgrounds as [static images](https://wiki.sonolus.com/background-specs/overview).
+- Complex SV charts and engine play/watch/preview modes still need broader real-client validation.
 
 ## License
 
