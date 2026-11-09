@@ -50,8 +50,9 @@ UI goals:
 Functional goals:
 - batch import multiple `.osz` packages
 - configurable hold/slide tail judgment type: `release`, `trace`, or `none`
-- optional Tinged Columns conversion: 4K lanes 1/4, 5K lanes 2/4, 6K lanes 2/5 become critical notes
+- optional Tinged Columns conversion: 4K lanes 1/4, 5K lanes 2/4, 6K lanes 2/5, 7K lanes 2/4/6 become critical notes
 - selectable NextRUSH+ or Next SEKAI target engine
+- automatically detect 4K/5K/6K/7K from the chart; do not add a key-count selector or detected-key-count label to the GUI
 - export mode: one `.scp` per `.osz`
 - export mode: merge multiple `.osz` packages into one `.scp`
 - selectable output path
@@ -75,11 +76,12 @@ Functional goals:
 - Both-target packaging/schema tests, full `dan.osz` conversions, and Windows executable startup smoke check passed (2026-10-22)
 - Effective osu!mania SV resets at red TimingPoints are handled for `timeScaleGroup`
 - Automatic 1 ms note-grid snapping is shared by both targets. The NextRUSH+ Tsukuyomi ni Naru retest with original background was confirmed working by the user (2026-10-23); this is not exhaustive validation of other charts or engine modes.
+- Early notes use a whole-beat backward extension of the time origin instead of a negative-beat clamp. Both-target regression tests passed; the user confirmed the corrected NextRUSH+ 592762 4K release-tail test pack fixes the opening overlap (2026-11-09).
 
 ### ❌ Pending
 - Complex SV charts still need broader real-client visual validation
 - No hitsound preservation
-- 7K not implemented (only 4K/5K/6K for now)
+- 7K uses the shared lane mapping and packaging pipeline; real-client gameplay validation is pending
 - Next SEKAI still needs real-client import, play, watch, preview, and result-screen validation
 
 ## Critical Conventions
@@ -111,6 +113,7 @@ When enabled, convert objects on these 1-based mania lanes to USC `critical: tru
 - 4K: lanes 1 and 4 (`col` 0 and 3)
 - 5K: lanes 2 and 4 (`col` 1 and 3)
 - 6K: lanes 2 and 5 (`col` 1 and 4)
+- 7K: lanes 2, 4, and 6 (`col` 1, 3, and 5)
 
 This applies to both tap `single` objects and hold `slide` objects. Keep it disabled by default.
 
@@ -118,7 +121,7 @@ This applies to both tap `single` objects and hold `slide` objects. Keep it disa
 Generate `TransientHiddenTickNote` on the normal `0.5`-beat grid strictly between slide endpoints. Do not apply an additional exclusion window after the head.
 
 ### Note Grid Snapping
-In osu -> USC conversion, automatically snap taps and hold endpoints to the nearest global USC beat grid with 1, 2, 3, 4, 6, 8, 12, or 16 divisions per beat, only when the source-audio-time change is at most 1 ms. Measure the distance through the BPM segments, including across a tempo change. Do not snap BPM/SV events or change the audio offset. Use the same result for NextRUSH+ and Next SEKAI.
+In osu -> USC conversion, automatically snap taps and hold endpoints to the nearest global USC beat grid with 1, 2, 3, 4, 6, 8, 12, or 16 divisions per beat, only when the source-audio-time change is at most 1 ms. Measure the distance through the BPM segments, including across a tempo change. Snapping itself must not move BPM/SV events or change the chosen audio offset. Use the same result for NextRUSH+ and Next SEKAI.
 
 Keep simultaneous events together. Revert conflicting snaps if distinct event times would merge or reverse, including a hold collapsing to zero duration. This corrects millisecond quantization near a grid line; it does not remove genuinely close head/tick pairs on different grid lines.
 
@@ -176,9 +179,9 @@ python scripts/fetch_engine_pack.py --server https://coconut.sonolus.com/next-se
 This fetches the engine and its default skin/background/effect/particle, verifies every downloaded SHA-1, and localizes repository URLs. Source: <https://github.com/Next-SEKAI/sonolus-next-sekai-engine>. Run both-target tests after updating either pack.
 
 ### Offset Sign
-Use the first red TimingPoint as USC beat 0, and set `usc.offset = first_red_time_ms / 1000`. This places beat 0 at the original `.osu` audio timestamp after converting HitObject times to beats.
+Normally use the first red TimingPoint as USC beat 0. If a note precedes it, extend the first BPM backward in whole-beat steps until the new origin is strictly earlier than the first note: `lead_beats = floor((first_red_ms - first_note_ms) / first_beat_length_ms) + 1`. Do not place the first note arbitrarily at beat 0. Leave charts without early notes unchanged.
 
-Do not emit negative `#BEAT` values for note objects. Some osu files place opening HitObjects slightly before the first red TimingPoint; clamp converted tap/hold beats to `0` so Sonolus input entities can despawn and the result skip state can activate.
+Set `usc.offset = origin_ms / 1000`, initialize BPM at the new beat 0, and translate all original BPM/SV/note beats consistently. This preserves source audio alignment and the global subdivision/hidden-tick grid phase. Do not clamp negative note beats to zero: that merges distinct opening notes. Keep emitted note `#BEAT` values nonnegative by choosing the origin, so Sonolus input entities can despawn and the result skip state can activate.
 
 ### Float Tolerance for TimingPoints
 Timing point times carry microsecond precision. Always use tolerance comparisons (e.g., `abs(t1 - t2) < 1e-6`), never `==`.

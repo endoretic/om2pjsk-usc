@@ -11,9 +11,10 @@ The intermediate USC uses the Project Sekai / NextRUSH+ chart model, not generic
 ## Features
 
 - Converts valid Osu!Mania charts from `.osz` packages.
-- Supports 4K, 5K, and 6K charts.
+- Supports 4K, 5K, 6K, and 7K charts, with automatic key-count detection.
 - Converts taps to USC `single` objects and holds to USC `slide` objects.
 - Automatically snaps note times within 1 ms of common beat subdivisions for both engines, preserving chords and note order.
+- Preserves notes before the first timing point by extending the beat origin backward in whole beats without changing audio alignment.
 - Supports `release`, `trace`, and `none` hold tail styles.
 - Converts BPM segments and timing-based time scale groups.
 - Supports optional Tinged Columns critical-note conversion.
@@ -101,7 +102,7 @@ Useful conversion options:
 | `--engine FILE` | Override the bundled resource pack for the selected target. |
 | `--tail-mode {none,release,trace}` | Hold tail judgment style. Defaults to `release`; `none` creates an unjudged slide endpoint. |
 | `--background-mode {default,original}` | Use the selected engine's default gameplay background or generated backgrounds from the source beatmap. |
-| `--tinged-columns` | Mark configured columns as critical notes: 4K lanes 1/4, 5K lanes 2/4, 6K lanes 2/5. |
+| `--tinged-columns` | Mark configured columns as critical notes: 4K lanes 1/4, 5K lanes 2/4, 6K lanes 2/5, 7K lanes 2/4/6. |
 | `--out-dir DIR` | Output directory for batch conversion when not using `--merge`. |
 
 ## Project Layout
@@ -134,7 +135,7 @@ scripts/
 - Each target has its own bundled resource pack and distinct level identifiers, so both conversions can coexist in a Sonolus collection.
 - Generated backgrounds have no online update source, preventing collection updates from replacing them with an engine server's fallback image. Existing affected packages must be regenerated and reimported.
 - Upstream engines retain their official update sources for Sonolus collection updates. These follow the server's deployed version, not GitHub HEAD, and do not refresh the application's bundled snapshots. Compatible engine updates do not require reconversion; the 1 ms note correction is stored in LevelData.
-- 7K charts are not implemented.
+- 7K uses seven equal-width columns across the same 12-unit stage. Sonolus client gameplay validation is pending.
 - Hitsounds are not preserved.
 - Charts with missing or empty audio are skipped with a conversion warning; an all-skipped conversion fails without writing an SCP.
 - Only static gameplay backgrounds are supported. osu! video and storyboard events are ignored; neither is included in the exported SCP. Sonolus currently defines backgrounds as [static images](https://wiki.sonolus.com/background-specs/overview).

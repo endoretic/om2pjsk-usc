@@ -91,9 +91,9 @@ class NoteGridSnappingTests(unittest.TestCase):
         self.assertEqual(note_time_ms_to_beat(984, segments), 2)
         self.assertLess(abs(beat_to_time_ms(2, segments) - 984), 1)
 
-    def test_nonnegative_clamp_and_default_timing_are_preserved(self):
+    def test_snapping_does_not_clamp_relative_beats(self):
         segments = build_bpm_segments([TimingPoint(time=1000, beat_length=500)])
-        self.assertEqual(note_time_ms_to_beat(900, segments), 0)
+        self.assertEqual(note_time_ms_to_beat(900, segments), -0.2)
         self.assertEqual(note_time_ms_to_beat(999, segments), 0)
         self.assertEqual(note_time_ms_to_beat(749, []), 1.5)
 
@@ -191,9 +191,107 @@ class NoteGridSnappingTests(unittest.TestCase):
                         results.append(data)
                         heads = [fields(e)["#BEAT"] for e in data["entities"] if e["archetype"].endswith("HeadTapNote")]
                         ticks = [fields(e)["#BEAT"] for e in data["entities"] if e["archetype"] == "TransientHiddenTickNote"]
-                        self.assertEqual(heads, [1.5, 1.5])
-                        self.assertEqual(sorted(ticks), [2, 2, 2.5, 2.5])
+                        self.assertEqual(data["bgmOffset"], 0.5)
+                        self.assertEqual(heads, [2.5, 2.5])
+                        self.assertEqual(sorted(ticks), [3, 3, 3.5, 3.5])
             self.assertEqual(results[0], results[1])
+
+
+class TimingOriginTests(unittest.TestCase):
+    def test_origin_moves_by_whole_beats_strictly_before_early_notes(self):
+        for first_note_ms, expected_offset, expected_beat in (
+            (750, 0.5, 0.5),
+            (500, 0.0, 1.0),
+            (250, 0.0, 0.5),
+            (0, -0.5, 1.0),
+        ):
+            with self.subTest(first_note_ms=first_note_ms):
+                usc = osu_to_usc(chart_with([tap(first_note_ms)]))
+                self.assertEqual(usc["offset"], expected_offset)
+                self.assertLess(usc["offset"] * 1000, first_note_ms)
+                bpms = [o for o in usc["objects"] if o["type"] == "bpm"]
+                lead_beats = (1000 - expected_offset * 1000) / 500
+                self.assertEqual([o["beat"] for o in bpms], [0, lead_beats])
+                self.assertEqual([o["bpm"] for o in bpms], [120, 120])
+                note = next(o for o in usc["objects"] if o["type"] == "single")
+                self.assertEqual(note["beat"], expected_beat)
+                self.assertEqual(usc["offset"] * 1000 + note["beat"] * 500, first_note_ms)
+
+    def test_no_extension_without_notes_before_first_red(self):
+        for notes in ([], [tap(1000)], [tap(1250)]):
+            with self.subTest(notes=notes):
+                usc = osu_to_usc(chart_with(notes))
+                self.assertEqual(usc["offset"], 1)
+                self.assertEqual([o for o in usc["objects"] if o["type"] == "bpm"],
+                                 [{"type": "bpm", "beat": 0, "bpm": 120}])
+        usc = osu_to_usc(OsuChart(mode=3, circle_size=4, hit_objects=[tap(250)]))
+        self.assertEqual(usc["offset"], 0)
+        self.assertEqual(next(o["beat"] for o in usc["objects"] if o["type"] == "single"), 0.5)
+
+    def test_fool_moon_opening_retains_distinct_notes_and_chords(self):
+        source_notes = [tap(1350, 448), tap(1405, 320), tap(1459, 448),
+                        tap(1513, 192), tap(1568, 64), tap(1568, 448)]
+        chart = chart_with(source_notes, [TimingPoint(time=1595, beat_length=60000 / 138)])
+        chart.circle_size = 4
+        usc = osu_to_usc(chart, tinged_columns=True)
+        self.assertAlmostEqual(usc["offset"], (1595 - 60000 / 138) / 1000)
+        notes = [o for o in usc["objects"] if o["type"] == "single"]
+        beats = [o["beat"] for o in notes]
+        self.assertGreater(min(beats), 0)
+        self.assertEqual(len(set(beats)), 5)
+        self.assertEqual(beats[-1], beats[-2])
+        lane_four = [o["beat"] for o in notes if o["lane"] == 4.5]
+        self.assertEqual(len(set(lane_four)), 3)
+        for source, note in zip(source_notes, notes):
+            actual_ms = usc["offset"] * 1000 + note["beat"] * 60000 / 138
+            self.assertLessEqual(abs(actual_ms - source.time), 1.000001)
+
+    def test_bpm_sv_and_audio_times_use_the_same_shifted_origin(self):
+        chart = chart_with([tap(749), hold(900, 2250)], [
+            TimingPoint(time=1000, beat_length=500),
+            TimingPoint(time=1100.25, beat_length=-50, uninherited=0),
+            TimingPoint(time=2000.5, beat_length=1000),
+        ])
+        usc = osu_to_usc(chart)
+        self.assertEqual(usc["offset"], 0.5)
+        bpms = [o for o in usc["objects"] if o["type"] == "bpm"]
+        self.assertEqual([o["bpm"] for o in bpms], [120, 120, 60])
+        for actual, expected in zip([o["beat"] for o in bpms], [0, 1, 3.001]):
+            self.assertAlmostEqual(actual, expected)
+        changes = next(o["changes"] for o in usc["objects"] if o["type"] == "timeScaleGroup")
+        self.assertEqual([o["timeScale"] for o in changes], [1, 2, 0.5])
+        for actual, expected in zip([o["beat"] for o in changes], [0, 1.2005, 3.001]):
+            self.assertAlmostEqual(actual, expected)
+        notes = [o for o in usc["objects"] if o["type"] in ("single", "slide")]
+        beats = [notes[0]["beat"], *(c["beat"] for c in notes[1]["connections"])]
+        for beat, source_ms in zip(beats, [749, 900, 2250]):
+            actual_ms = 500 + beat * 500 if beat <= 3.001 else 2000.5 + (beat - 3.001) * 1000
+            self.assertLessEqual(abs(actual_ms - source_ms), 1.000001)
+        self.assertEqual([tp.time for tp in chart.timing_points], [1000, 1100.25, 2000.5])
+
+    def test_early_hold_and_distinct_events_do_not_collapse(self):
+        for tail in ("release", "trace", "none"):
+            with self.subTest(tail=tail):
+                usc = osu_to_usc(chart_with([hold(749, 751), tap(750, x=469)]), tail_mode=tail)
+                slide = next(o for o in usc["objects"] if o["type"] == "slide")
+                self.assertEqual([c["beat"] for c in slide["connections"]], [0.498, 0.502])
+                self.assertEqual(next(o["beat"] for o in usc["objects"] if o["type"] == "single"), 0.5)
+                data = usc_to_leveldata(usc)
+                self.assertTrue(all(entry["value"] >= 0 for e in data["entities"]
+                                    for entry in e["data"] if entry["name"] == "#BEAT"))
+
+    def test_hidden_tick_grid_phase_is_unchanged(self):
+        original = osu_to_usc(chart_with([hold(1749, 3499)]))
+        extended = osu_to_usc(chart_with([tap(749, x=469), hold(1749, 3499)]))
+        ticks = []
+        for usc in (original, extended):
+            data = usc_to_leveldata(usc)
+            ticks.append([fields(e)["#BEAT"] for e in data["entities"]
+                          if e["archetype"] == "TransientHiddenTickNote"])
+        self.assertTrue(ticks[0])
+        self.assertEqual(ticks[1], [beat + 1 for beat in ticks[0]])
+        self.assertEqual([original["offset"] * 1000 + beat * 500 for beat in ticks[0]],
+                         [extended["offset"] * 1000 + beat * 500 for beat in ticks[1]])
 
 
 if __name__ == "__main__":

@@ -155,7 +155,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--background-mode", choices=("default", "original"), default="default",
                         help="Use the target engine's default background or generated original osu backgrounds")
     parser.add_argument("--tinged-columns", action="store_true",
-                        help="Convert notes on Tinged Columns to critical notes (4K: 1/4, 5K: 2/4, 6K: 2/5)")
+                        help="Convert notes on Tinged Columns to critical notes (4K: 1/4, 5K: 2/4, 6K: 2/5, 7K: 2/4/6)")
 
     args = parser.parse_args(argv)
 

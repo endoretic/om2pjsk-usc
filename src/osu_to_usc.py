@@ -27,6 +27,7 @@ TINGED_COLUMNS_BY_KEY = {
     4: {0, 3},
     5: {1, 3},
     6: {1, 4},
+    7: {1, 3, 5},
 }
 
 _FLOAT_TOLERANCE = 1e-6
@@ -131,14 +132,14 @@ def note_time_ms_to_beat(time_ms: float, segments: List[BpmSegment]) -> float:
     nearest = min(candidates, key=lambda value: abs(beat_to_time_ms(value, segments) - time_ms))
     if abs(beat_to_time_ms(nearest, segments) - time_ms) <= NOTE_SNAP_TOLERANCE_MS + _FLOAT_TOLERANCE:
         beat = nearest
-    return max(0.0, beat)
+    return beat
 
 
 def _build_note_beats(chart: OsuChart, segments: List[BpmSegment]) -> Dict[int, float]:
     times = {ho.time for ho in chart.hit_objects}
     times.update(ho.end_time for ho in chart.hit_objects if ho.is_hold and ho.end_time is not None)
     ordered_times = sorted(times)
-    original = {t: max(0.0, time_ms_to_beat(t, segments)) for t in ordered_times}
+    original = {t: time_ms_to_beat(t, segments) for t in ordered_times}
     snapped = {t: note_time_ms_to_beat(t, segments) for t in ordered_times}
 
     # Share snaps across chords and undo collisions, including LN head/tail pairs.
@@ -220,6 +221,19 @@ class USCBuilder:
         self.tail_mode = tail_mode
         self.tinged_columns = tinged_columns
         self.bpm_segments = build_bpm_segments(chart.red_timing_points)
+        first = self.bpm_segments[0]
+        first_note_ms = min((ho.time for ho in chart.hit_objects), default=first.start_ms)
+        if first_note_ms < first.start_ms:
+            # Extend backward by whole beats, preserving note and hidden-tick grid phase.
+            lead_beats = floor((first.start_ms - first_note_ms) / first.beat_length_ms) + 1
+            for segment in self.bpm_segments:
+                segment.beat_at_start += lead_beats
+            self.bpm_segments.insert(0, BpmSegment(
+                start_ms=first.start_ms - lead_beats * first.beat_length_ms,
+                beat_at_start=0.0,
+                beat_length_ms=first.beat_length_ms,
+                bpm=first.bpm,
+            ))
         self._objects: List[Dict[str, Any]] = []
 
     def add_bpm_objects(self) -> None:
@@ -326,13 +340,8 @@ class USCBuilder:
 
     def build(self) -> Dict[str, Any]:
         """Build and return the full USC dictionary."""
-        # First red timing point is beat 0 in USC; offset places that beat
-        # back on the source osu! audio timeline.
-        first_red = self.chart.first_red_time
-        if first_red is not None:
-            offset = first_red / 1000.0
-        else:
-            offset = 0.0
+        # Offset locates the (possibly extended) beat origin on the source audio timeline.
+        offset = self.bpm_segments[0].start_ms / 1000.0
 
         self._objects = []
         self.add_bpm_objects()

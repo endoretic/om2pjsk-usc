@@ -496,7 +496,7 @@ class Om2UscWindow(QMainWindow):
         self.option_tip = HoverTip(self)
         self.option_tip.bind(
             self.tinged_columns_checkbox,
-            "Marks configured columns as gold critical notes. 4K uses lanes 1/4, 5K uses lanes 2/4, and 6K uses lanes 2/5.",
+            "Marks configured columns as gold critical notes. 4K uses lanes 1/4, 5K uses lanes 2/4, 6K uses lanes 2/5, and 7K uses lanes 2/4/6.",
         )
         note_options = QHBoxLayout()
         note_options.setContentsMargins(0, 0, 0, 0)

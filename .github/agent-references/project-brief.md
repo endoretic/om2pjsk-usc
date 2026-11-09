@@ -245,10 +245,10 @@ bpm
 beat = segment.beat_at_start + (time_ms - segment.start_ms) / segment.beat_length_ms
 ```
 
-建议把第一条红线作为 beat 0：
+通常把第一条红线作为 beat 0；若首音更早，按第一段 BPM 向前倒推整拍，直到原点严格早于首音：
 
 ```text
-first_red_time_ms -> beat 0
+origin_ms -> beat 0
 ```
 
 然后所有 BPM 对象也使用相对 beat：
@@ -260,8 +260,8 @@ first_red_time_ms -> beat 0
 offset 规则：
 
 - NextRUSH+ `uscToLevelData()` 会把 `usc.offset` 写入 `bgmOffset`。
-- 对 osu!mania 来说，第一条红线作为 USC beat 0。
-- 使用 `usc.offset = first_red_time_ms / 1000`，把 beat 0 放回原 `.osu` 音频时间轴。
+- 首音早于第一条红线时，倒推拍数为 `floor((first_red_ms - first_note_ms) / first_beat_length_ms) + 1`；否则原点不变。
+- 使用 `usc.offset = origin_ms / 1000`，在新 beat 0 初始化 BPM，并将原有 BPM、SV、音符的 beat 同步平移，保持音频对齐及网格相位。不能把负 beat 音符压成 0，也不能任意把首音设为 beat 0。
 
 ## 轨道与宽度映射
 
@@ -557,7 +557,7 @@ GUI 应继续复用 `src/` 下转换核心：
 
 1. 建立 BPM segment 模型。
 2. 实现 `time_ms_to_beat()`。
-3. 按第一条红线作为 beat 0。
+3. 通常按第一条红线作为 beat 0；若有更早音符，则按第一段 BPM 向前倒推整拍确定原点。
 4. 生成 `bpm` objects。
 5. 生成 `timeScaleGroup` object。
 6. Tap 转 `single`。
@@ -567,8 +567,8 @@ GUI 应继续复用 `src/` 下转换核心：
 
 ### Phase 3：offset 处理
 
-1. 第一条红线作为 USC beat 0。
-2. 设置 `usc.offset = first_red_time_ms / 1000`。
+1. 通常以第一条红线作为 USC beat 0；有更早音符时，按第一段 BPM 倒推整拍，直到原点严格早于首音。
+2. 设置 `usc.offset = origin_ms / 1000`，并同步平移原有 BPM、SV 和音符的 beat。
 3. 用有非零第一红线的谱面验证音乐和音符对齐，例如 `testdata/6K.osz` 中的 Axium Crisis / FEHLT。
 
 ### Phase 4：移植 NextRUSH+ uscToLevelData
@@ -631,7 +631,7 @@ GUI 应继续复用 `src/` 下转换核心：
 
 ## 已知风险
 
-- `usc.offset` 使用正向第一红线秒数；带非零第一红线的谱面需要重点回归。
+- `usc.offset` 使用选定原点的音频秒数；首音早于第一红线时需重点回归，确保整拍前移原点后音频对齐不变、音符不重叠。
 - mania 轨道宽度到 NextRUSH+ `lane` / `size` 的映射以 `testdata/key4.usc`、`testdata/key5.usc`、`testdata/key6.usc` 为当前参考。
 - osu!mania SV 与 NextRUSH+ `timeScale` 不一定完全等价。
 - `.osu` hitsound / sampleSet 初期可能被忽略。

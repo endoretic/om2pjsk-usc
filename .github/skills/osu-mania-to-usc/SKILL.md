@@ -45,7 +45,7 @@ Only accept valid osu!mania charts:
 - `[General] Mode: 3`
 - `CircleSize` gives `keyCount`.
 - Ignore placeholder charts with too few notes.
-- Support 4K/5K/6K currently; 7K remains out of scope unless implementation support is added.
+- Support 4K/5K/6K/7K. Detect the key count from the chart automatically, without requiring a GUI setting.
 
 ### Lane Calculation
 
@@ -68,6 +68,8 @@ size = column_width / 2
 
 `lane` is the note center. USC `size` is the note half-width used by NextRUSH+, not the full spacing between adjacent lane centers.
 
+7K uses the same formula: centers are `(-36, -24, -12, 0, 12, 24, 36) / 7`, with `size = 6 / 7`. Preserve fractional positions and widths; do not round them to integer lanes.
+
 ### Timing
 
 Red TimingPoints define BPM:
@@ -76,7 +78,7 @@ Red TimingPoints define BPM:
 bpm = 60000 / beatLength
 ```
 
-The first red TimingPoint is beat 0. Build a timing model with `time_ms_to_beat()`.
+Normally the first red TimingPoint is beat 0. If notes precede it, extend the first BPM backward by whole beats as described under Offset. Build a shared timing model with `time_ms_to_beat()`.
 
 Green TimingPoints contribute osu!mania SV:
 
@@ -99,7 +101,7 @@ Use tolerance comparisons for TimingPoint times, for example `abs(a - b) < 1e-6`
 
 Automatically snap tap times and both hold endpoints to the nearest global USC beat subdivision, using 1, 2, 3, 4, 6, 8, 12, or 16 divisions per beat. Accept a snap only if it moves the source audio timestamp by at most 1 ms; compute that distance with the full BPM-segment model, not a fixed beat tolerance. Keep farther off-grid notes unchanged.
 
-All notes at the same source time must stay simultaneous. Revert snaps that merge or reverse distinct event times, including collapsing a positive-duration hold. Preserve the existing nonnegative-beat clamp. Do not snap timing/SV events or alter the audio offset. This is shared by GUI, CLI, USC dumps, and both target engines; it is not a hidden-tick exclusion window or an engine judgment change.
+All notes at the same source time must stay simultaneous. Revert snaps that merge or reverse distinct event times, including collapsing a positive-duration hold. Choose a nonnegative note-beat origin before snapping; never clamp distinct early notes to zero. Snapping itself must not move timing/SV events or alter the chosen audio offset. This is shared by GUI, CLI, USC dumps, and both target engines; it is not a hidden-tick exclusion window or an engine judgment change.
 
 ### HitObjects
 
@@ -108,19 +110,23 @@ All notes at the same source time must stay simultaneous. Revert snaps that merg
 - Hold `endTime` is stored in `objectParams` as `endTime:hitSample`.
 - Converted hold/slide tail judgment type is controlled by product config and currently supports `release`, `trace`, or `none`.
 - For converted holds, write `critical` on the `slide` object and on both `start`/`end` connections. The start connection uses `judgeType: "normal"`; the end connection uses `judgeType: "normal"` for release tails, `judgeType: "trace"` for trace tails, and `judgeType: "none"` for unjudged tails.
-- Do not emit negative note beats. If a HitObject is slightly before the first red TimingPoint, clamp its USC note beat to `0`; negative input entities can prevent Sonolus from reaching the skip/result state.
-- Optional Tinged Columns config may convert specific lanes to USC `critical: true`: 4K lanes 1/4, 5K lanes 2/4, 6K lanes 2/5. These lane numbers are 1-based from left to right.
+- Do not emit negative note beats; negative input entities can prevent Sonolus from reaching the skip/result state. For notes before the first red TimingPoint, extend the time origin by whole beats instead of clamping notes to `0`.
+- Optional Tinged Columns config may convert specific lanes to USC `critical: true`: 4K lanes 1/4, 5K lanes 2/4, 6K lanes 2/5, 7K lanes 2/4/6. These lane numbers are 1-based from left to right.
 - Tinged Columns applies to both tap `single` objects and hold `slide` objects, and must stay disabled by default.
 
 ### Offset
 
-Use the first red TimingPoint as USC beat 0, and set `usc.offset` to the same source audio time in seconds:
+Use the first red TimingPoint as the initial origin. If the earliest note precedes it, move the origin backward by whole beats of the first BPM until it is strictly before that note (including one more beat if the note is exactly on a backward whole-beat boundary):
 
 ```python
-offset = first_red_time_ms / 1000
+origin_ms = first_red_time_ms
+if first_note_ms < first_red_time_ms:
+    lead_beats = floor((first_red_time_ms - first_note_ms) / first_beat_length_ms) + 1
+    origin_ms -= lead_beats * first_beat_length_ms
+offset = origin_ms / 1000
 ```
 
-This keeps beat 0 aligned with its original `.osu` audio timestamp after converting note times to beats.
+Initialize BPM at the new beat 0 and shift every original BPM, SV, and note beat by the same integer amount. Preserve source audio timing through the adjusted offset. Do not use the first note itself as an arbitrary beat origin, because that changes the subdivision and hidden-tick grid phase. Charts without early notes keep their original origin.
 
 ## Output
 

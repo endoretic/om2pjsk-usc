@@ -1,6 +1,11 @@
+import gzip
+import io
+import json
 import os
 import tempfile
 import unittest
+import zipfile
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,8 +16,9 @@ from PySide6.QtGui import QFontDatabase
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from gui.app import ConversionWorker, Om2UscWindow, OszEntry
+from gui.app import ConversionWorker, Om2UscWindow, OszEntry, inspect_osz
 from src.engines import ENGINE_PROFILES, default_engine_path
+from tests.helpers import make_osz
 
 
 class GuiEngineTests(unittest.TestCase):
@@ -40,6 +46,7 @@ class GuiEngineTests(unittest.TestCase):
         self.assertEqual(window.target_engine_combo.currentData(), "nextrush")
         self.assertEqual(window.engine_edit.text(), str(default_engine_path("nextrush")))
         self.assertEqual(window.tail_combo.currentData(), "release")
+        self.assertFalse(window.tinged_columns_checkbox.isChecked())
         window.engine_edit.setText("custom-rush.scp")
         window.background_combo.setCurrentIndex(1)
         window.target_engine_combo.setFocus()
@@ -78,6 +85,41 @@ class GuiEngineTests(unittest.TestCase):
                 self.assertEqual(self.window.width(), width)
                 for above, below in zip(controls[:6], controls[1:6]):
                     self.assertGreaterEqual(below.y() - above.geometry().bottom(), 8)
+
+    def test_seven_key_import_and_export_remain_automatic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            source = make_osz(directory / "seven.osz", keys=(7,), all_columns=True)
+            entry = inspect_osz(str(source))
+            self.assertEqual(entry.chart_count, 1)
+            self.assertEqual(entry.title, "Target test")
+            self.assertIsNotNone(entry.background)
+            for target in ENGINE_PROFILES:
+                for mode in ("merge", "one-to-one"):
+                    with self.subTest(target=target, mode=mode), redirect_stdout(io.StringIO()):
+                        folder = directory / target / mode
+                        output = folder / "seven.scp"
+                        worker = ConversionWorker(
+                            [entry], str(default_engine_path(target)),
+                            str(output if mode == "merge" else folder),
+                            mode, "release", "original", True, target,
+                        )
+                        finished = []
+                        worker.signals.finished.connect(lambda *args: finished.append(args))
+                        worker.run()
+                        self.assertEqual(finished, [(True, "Conversion finished.")])
+                        with zipfile.ZipFile(output) as archive:
+                            level = json.loads(archive.read("sonolus/levels/list"))["items"][0]
+                            self.assertEqual(level["engine"]["name"], ENGINE_PROFILES[target].item_name)
+                            self.assertFalse(level["useBackground"]["useDefault"])
+                            self.assertNotIn("source", level["useBackground"]["item"])
+                            data = json.loads(gzip.decompress(archive.read(level["data"]["url"].lstrip("/"))))
+                            heads = [e for e in data["entities"] if e["archetype"].endswith("HeadTapNote")]
+                            self.assertEqual(len(heads), 7)
+                            self.assertEqual([e["archetype"] for e in heads], [
+                                "NormalHeadTapNote", "CriticalHeadTapNote", "NormalHeadTapNote",
+                                "CriticalHeadTapNote", "NormalHeadTapNote", "CriticalHeadTapNote", "NormalHeadTapNote",
+                            ])
 
     def test_workers_forward_target_in_both_export_modes(self):
         entries = [OszEntry("one.osz", 1, "One"), OszEntry("two.osz", 1, "Two")]

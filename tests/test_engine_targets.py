@@ -117,7 +117,7 @@ class EngineTargetTests(unittest.TestCase):
         entities = data["entities"]
         names = {entity["name"] for entity in entities}
         self.assertEqual(len(names), len(entities))
-        self.assertEqual(data["bgmOffset"], 1)
+        self.assertEqual(data["bgmOffset"], 0.5)
         archetypes = {entity["archetype"] for entity in entities}
         for mode, schema in self.schemas[target].items():
             self.assertFalse(archetypes - schema.keys(), (target, mode, archetypes - schema.keys()))
@@ -144,21 +144,26 @@ class EngineTargetTests(unittest.TestCase):
 
         heads = [entity for entity in entities if entity["archetype"].endswith("HeadTapNote")]
         head_fields = [{f["name"]: f.get("value", f.get("ref")) for f in entity["data"]} for entity in heads]
-        self.assertEqual(len(heads), 2)
+        self.assertEqual(len(heads), key_count)
         for col, fields in enumerate(head_fields):
+            if key_count == 7:
+                prefix = "Critical" if col in (1, 3, 5) else "Normal"
+                self.assertEqual(heads[col]["archetype"], prefix + "HeadTapNote")
             self.assertAlmostEqual(fields["lane"], -6 + (col + 0.5) * 12 / key_count)
             self.assertAlmostEqual(fields["size"], 6 / key_count)
-            self.assertAlmostEqual(fields["#BEAT"], 1.49)
+            self.assertAlmostEqual(fields["#BEAT"], 2.49)
+            self.assertAlmostEqual(data["bgmOffset"] * 1000 + fields["#BEAT"] * 500, 1745)
         ticks = [entity for entity in entities if entity["archetype"] == "TransientHiddenTickNote"]
         tick_beats = [next(f["value"] for f in entity["data"] if f["name"] == "#BEAT") for entity in ticks]
-        self.assertEqual(sorted(tick_beats), [1.5, 1.5, 2, 2, 2.5, 2.5])
-        self.assertEqual(sum(e["archetype"] == "Connector" for e in entities), 2)
+        self.assertEqual(sorted(tick_beats), [2.5] * key_count + [3] * key_count + [3.5] * key_count)
+        self.assertEqual(sum(e["archetype"] == "Connector" for e in entities), key_count)
         self.assertIn("SimLine", archetypes)
 
     def test_all_tail_modes_and_key_counts_match_both_runtime_schemas(self):
         target_names = {}
         with tempfile.TemporaryDirectory() as directory:
-            source = make_osz(Path(directory) / "test.osz")
+            keys = (4, 5, 6, 7)
+            source = make_osz(Path(directory) / "test.osz", keys=keys, all_columns=True)
             output = Path(directory) / "test.scp"
             for target, profile in ENGINE_PROFILES.items():
                 for tail in ("release", "trace", "none"):
@@ -168,14 +173,14 @@ class EngineTargetTests(unittest.TestCase):
                                            target_engine=target, tail_mode=tail, tinged_columns=True,
                                            progress_callback=lambda *args: progress.append(args))
                         self.assertEqual(status, 0)
-                        self.assertEqual(progress[0][:2], (0, 3))
-                        self.assertEqual(progress[-1][:2], (3, 3))
+                        self.assertEqual(progress[0][:2], (0, len(keys)))
+                        self.assertEqual(progress[-1][:2], (len(keys), len(keys)))
                         with zipfile.ZipFile(output) as archive:
                             self.assert_repository(archive)
                             levels = json.loads(archive.read("sonolus/levels/list"))["items"]
-                            self.assertEqual(len(levels), 3)
+                            self.assertEqual(len(levels), len(keys))
                             target_names[target] = {level["name"] for level in levels}
-                            for key_count, level in zip((4, 5, 6), levels):
+                            for key_count, level in zip(keys, levels):
                                 self.assertTrue(level["name"].startswith(profile.level_prefix + "-"))
                                 self.assertEqual(level["engine"], self.engines[target])
                                 self.assertEqual(level["useBackground"], {"useDefault": True})
